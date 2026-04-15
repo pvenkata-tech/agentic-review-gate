@@ -395,6 +395,13 @@ async def _run_review_background(request: ReviewRequest) -> None:
         pr_info = await github_client.get_pr_info(request.pr_number)
         pr_diff = await github_client.get_pr_diff(request.pr_number)
         
+        # Debug: log the diff content
+        logger.debug(f"PR #{request.pr_number} diff received: {len(pr_diff)} characters")
+        if pr_diff:
+            logger.debug(f"First 500 chars of PR diff:\n{pr_diff[:500]}")
+        else:
+            logger.warning(f"PR #{request.pr_number} diff is EMPTY!")
+        
         # Extract data for ReviewState
         pr_metadata = PRMetadata(
             pr_number=request.pr_number,

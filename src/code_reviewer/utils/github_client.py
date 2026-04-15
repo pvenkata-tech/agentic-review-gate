@@ -86,10 +86,16 @@ class GitHubClient:
         Returns:
             Unified diff content as string
         """
+        from code_reviewer.utils.logger import get_logger
+        logger = get_logger()
+        
         url = (
             f"{self.config.base_url}/repos/{self.config.owner}/"
             f"{self.config.repo}/pulls/{pr_number}"
         )
+        
+        logger.debug(f"Fetching PR diff from: {url}")
+        logger.debug(f"Using Accept header: application/vnd.github.v3.diff")
         
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -97,7 +103,15 @@ class GitHubClient:
                 headers={**self.headers, "Accept": "application/vnd.github.v3.diff"},
             )
             response.raise_for_status()
-            return response.text
+            
+            diff_content = response.text
+            logger.debug(f"Received diff: {len(diff_content)} characters")
+            if diff_content:
+                logger.debug(f"First 300 chars:\n{diff_content[:300]}")
+            else:
+                logger.warning("PR diff is empty!")
+            
+            return diff_content
     
     async def post_review_comment(
         self, pr_number: int, comment_body: str, commit_id: Optional[str] = None
