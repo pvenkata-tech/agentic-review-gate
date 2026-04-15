@@ -8,16 +8,20 @@ Provides REST endpoints for:
 - Review statistics
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
+import hmac
+import hashlib
+import os
 
 from code_reviewer.core.state import ReviewState, PRMetadata
 from code_reviewer.core.coordinator import ReviewCoordinator
 from code_reviewer.utils.logger import get_logger
 from code_reviewer.utils.github_client import GitHubClient, GitHubConfig
+from code_reviewer.utils.diff_parser import DiffParser, DiffAnalyzer
 
 
 # Initialize
@@ -29,6 +33,39 @@ app = FastAPI(
 
 logger = get_logger()
 coordinator = ReviewCoordinator()
+
+
+def verify_github_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """
+    Verify GitHub webhook X-Hub-Signature-256 header.
+    
+    Args:
+        payload: Raw request body bytes
+        signature: X-Hub-Signature-256 header value (format: sha256=...)
+        secret: GitHub webhook secret
+        
+    Returns:
+        True if signature is valid, False otherwise
+    """
+    if not signature or not signature.startswith("sha256="):
+        return False
+    
+    try:
+        # Extract the hash from the header
+        expected_signature = signature.split("=", 1)[1]
+        
+        # Calculate the HMAC
+        calculated_hash = hmac.new(
+            secret.encode(),
+            payload,
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Compare (use constant-time comparison to prevent timing attacks)
+        return hmac.compare_digest(calculated_hash, expected_signature)
+    except Exception as e:
+        logger.error(f"Webhook signature verification failed: {str(e)}")
+        return False
 
 
 # Pydantic models for API
@@ -149,39 +186,88 @@ async def review_pr(request: ReviewRequest, background_tasks: BackgroundTasks):
 
 
 @app.post("/webhook/github")
-async def github_webhook(payload: dict, background_tasks: BackgroundTasks):
+async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle GitHub webhook events.
     
+    Security:
+    - Verifies X-Hub-Signature-256 header
+    - Only processes pull_request events
+    
     This endpoint receives webhooks for:
-    - pull_request events (opened, synchronize)
-    - issue comments
+    - pull_request events (opened, synchronize, reopened)
     
     Args:
-        payload: GitHub webhook payload
+        request: FastAPI request object
         background_tasks: FastAPI background tasks
         
     Returns:
         JSON response acknowledging receipt
     """
+    # Get the raw body for signature verification
+    raw_body = await request.body()
+    
+    # Get GitHub secret from environment
+    github_secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+    
+    # Verify signature (skip if secret not configured for development)
+    if github_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not verify_github_webhook_signature(raw_body, signature, github_secret):
+            logger.error("GitHub webhook signature verification failed")
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid webhook signature"
+            )
+    else:
+        logger.warning("GITHUB_WEBHOOK_SECRET not configured - signature verification skipped")
+    
+    # Parse payload
+    try:
+        payload = await request.json()
+    except Exception as e:
+        logger.error(f"Failed to parse webhook payload: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON payload"
+        )
+    
+    # Verify it's a pull request event
     event_type = payload.get("action")
     pr = payload.get("pull_request")
     
     if not pr:
+        logger.debug("Webhook received but not a PR event, ignoring")
         return JSONResponse({"status": "ignored", "reason": "not a PR event"})
     
     # Only trigger on new PR or new commits
-    if event_type not in ("opened", "synchronize"):
+    if event_type not in ("opened", "synchronize", "reopened"):
+        logger.debug(f"Webhook received but action='{event_type}' not in trigger list")
         return JSONResponse({"status": "ignored", "reason": f"action: {event_type}"})
     
     pr_number = pr["number"]
+    
+    logger.info(
+        f"GitHub webhook received for PR #{pr_number}",
+        pr_number=pr_number,
+        action=event_type,
+    )
+    
+    # Get GitHub token from environment or repo
+    github_token = os.getenv("GITHUB_TOKEN", "")
+    if not github_token:
+        logger.error("GITHUB_TOKEN not configured")
+        return JSONResponse({
+            "status": "error",
+            "reason": "GITHUB_TOKEN not configured"
+        })
     
     # Trigger review in background
     review_request = ReviewRequest(
         pr_number=pr_number,
         owner=payload["repository"]["owner"]["login"],
         repo=payload["repository"]["name"],
-        github_token="",  # Would be fetched from secure storage in production
+        github_token=github_token,
     )
     
     background_tasks.add_task(
@@ -192,6 +278,7 @@ async def github_webhook(payload: dict, background_tasks: BackgroundTasks):
     return JSONResponse({
         "status": "accepted",
         "pr_number": pr_number,
+        "action": event_type,
     })
 
 
