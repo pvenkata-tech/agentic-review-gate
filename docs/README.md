@@ -1,94 +1,202 @@
-# Documentation - Agentic Review Gate
+# Documentation Guide
 
-Comprehensive documentation for the agentic code review system.
+Quick reference for navigating documentation for agentic-review-gate.
+
+## 📚 Core Documentation
+
+### 1. **[SETUP.md](SETUP.md)** - Getting Started
+**Installation, Configuration, and Verification**
+
+Start here to:
+- ✅ Install Python dependencies
+- ✅ Set up virtual environment
+- ✅ Configure environment variables
+- ✅ Set up GitHub authentication
+- ✅ Configure LLM (Claude, GPT-4, or mock)
+- ✅ Verify everything works
+
+**Read time**: 10-15 minutes | **For**: Everyone (first-time setup)
+
+---
+
+### 2. **[INTEGRATION.md](INTEGRATION.md)** - External Services
+**GitHub Webhooks, Branch Protection, and LLM Providers**
+
+Learn about:
+- 🔗 GitHub webhook setup and configuration
+- 🔐 Webhook secret generation and validation
+- 🌐 Exposing local server (ngrok)
+- 📋 Branch protection rules
+- 🤖 LLM provider setup (Claude, GPT-4)
+- ✔️ Status checks and PR blocking
+
+**Read time**: 15-20 minutes | **For**: Setting up webhooks and integrations
+
+---
+
+### 3. **[OPERATIONS.md](OPERATIONS.md)** - Deployment and Monitoring
+**Testing, Deployment, Performance, and Troubleshooting**
+
+Covers:
+- 🧪 Running unit and integration tests
+- 📦 Deploying to Docker, Kubernetes, and cloud platforms
+- ⚡ Performance optimization and caching
+- 📊 Monitoring and observability
+- 🔧 Troubleshooting common issues
+
+**Read time**: 20-30 minutes | **For**: Deployment, testing, and ops
+
+---
+
+### 4. **[ARCHITECTURE.md](ARCHITECTURE.md)** - System Design
+**Architecture, Design Patterns, and Contributing**
+
+Understand:
+- 🏗️ Blackboard pattern for multi-agent coordination
+- 🧩 Agent interface and extensibility
+- 🔀 Workflow phases (analysis, evaluation, synthesis)
+- 💡 Design principles and patterns
+- 📝 Contributing guidelines and code organization
+- ⚙️ Performance characteristics and scalability
+
+**Read time**: 25-40 minutes | **For**: Understanding system design and contributing
+
+---
 
 ## Quick Navigation
 
-### Getting Started
-- **[README.md](../README.md)** - Project overview and quick start
-- **[WINDOWS_SETUP.md](WINDOWS_SETUP.md)** - Windows-specific setup instructions
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Deployment to production
+### I want to...
 
-### Integration & Configuration
-- **[GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md)** - GitHub webhook and branch protection setup
-- **[LLM_SETUP.md](LLM_SETUP.md)** - LLM provider configuration (Claude, GPT-4)
-- **[CACHING_STRATEGY.md](CACHING_STRATEGY.md)** - Caching and performance optimization
+**🚀 Get started quickly**
+1. Read [SETUP.md](SETUP.md)
+2. Run `python tests/diagnose.py`
+3. Test with `python tests/examples.py direct --pr-number 15`
 
-### Testing & Troubleshooting
-- **[TESTING.md](TESTING.md)** - Testing guide and diagnostics
-- **[tests/](../tests/)** - Test suite with examples and diagnostic tools
+**🔗 Set up webhooks**
+1. Read [SETUP.md](SETUP.md) for environment setup
+2. Follow [INTEGRATION.md#github-webhook-integration](INTEGRATION.md#github-webhook-integration)
+3. Configure ngrok or production server
 
-### Architecture
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design and patterns
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
+**🚀 Deploy to production**
+1. Review [SETUP.md](SETUP.md) for configuration
+2. Read [OPERATIONS.md#deployment](OPERATIONS.md#deployment)
+3. Follow Docker or Kubernetes instructions
 
-## Documentation by Use Case
+**🧪 Run tests**
+1. Read [OPERATIONS.md#testing](OPERATIONS.md#testing)
+2. Run `pytest tests/ -v`
+3. For diagnostics: `python tests/diagnose.py`
 
-### "I want to set up the system locally"
-1. Start with: [README.md](../README.md)
-2. Follow: [WINDOWS_SETUP.md](WINDOWS_SETUP.md) (if on Windows)
-3. Next: [GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md) to connect to GitHub
-4. Test: [TESTING.md](TESTING.md) to verify installation
+**🤖 Understand the system**
+1. Start with [ARCHITECTURE.md#overview](ARCHITECTURE.md#overview)
+2. Review [ARCHITECTURE.md#the-blackboard-pattern-solution](ARCHITECTURE.md#the-blackboard-pattern-solution)
+3. See [ARCHITECTURE.md#agent-interface](ARCHITECTURE.md#agent-interface)
 
-### "I want to configure GitHub webhooks"
-1. Read: [GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md) - Complete webhook setup
-2. Then: [TESTING.md](TESTING.md#webhook-testing) - Test the webhook
+**👨‍💻 Contribute code**
+1. Read [ARCHITECTURE.md#contributing-guidelines](ARCHITECTURE.md#contributing-guidelines)
+2. Follow [ARCHITECTURE.md#code-organization](ARCHITECTURE.md#code-organization)
+3. Review [ARCHITECTURE.md#design-principles](ARCHITECTURE.md#design-principles)
 
-### "I want to set up an LLM provider"
-1. Read: [LLM_SETUP.md](LLM_SETUP.md) - Provider configuration
-2. Choose: Claude (recommended) or GPT-4
-3. Test: `python tests/diagnose.py --check token`
+**⚙️ Troubleshoot issues**
+1. Run `python tests/diagnose.py`
+2. Check [INTEGRATION.md#troubleshooting](INTEGRATION.md#troubleshooting)
+3. See [OPERATIONS.md#troubleshooting](OPERATIONS.md#troubleshooting)
 
-### "I want to deploy to production"
-1. Read: [DEPLOYMENT.md](DEPLOYMENT.md) - Full deployment guide
-2. Reference: [GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md#production-deployment)
-3. Monitor: [DEPLOYMENT.md#monitoring](DEPLOYMENT.md#monitoring)
+**📊 Monitor and optimize**
+1. Review [OPERATIONS.md#monitoring](OPERATIONS.md#monitoring)
+2. Check [OPERATIONS.md#performance--caching](OPERATIONS.md#performance--caching)
+3. Follow [OPERATIONS.md#performance-benchmarks](OPERATIONS.md#performance-benchmarks)
+---
 
-### "I'm getting errors or issues"
-1. Run: `python tests/diagnose.py` - Comprehensive diagnostics
-2. Read: [TESTING.md#troubleshooting](TESTING.md#troubleshooting)
-3. Check: [TESTING.md#debugging](TESTING.md#debugging) - Debug logging setup
-4. See: Individual docs for specific topics
+## Documentation Structure
 
-## File Descriptions
-
-### ARCHITECTURE.md
-**Purpose**: Understand how the system works
-
-**Contents**:
-- Multi-agent architecture (Blackboard pattern)
-- Agent descriptions and capabilities
-- Workflow phases (parallel analysis, critical check, synthesis)
-- Design patterns used (Strategy, Blackboard, Dependency Inversion)
-- Extension points for custom agents
-
-**When to Read**: You want to understand the system design or add new agents
+```
+docs/
+├── README.md                 ← You are here
+├── SETUP.md                  ← Installation and configuration
+├── INTEGRATION.md            ← GitHub & LLM integrations
+├── OPERATIONS.md             ← Testing, deployment, monitoring
+├── ARCHITECTURE.md           ← System design and contributing
+└── assets/                   ← Images and diagrams
+```
 
 ---
 
-### CONTRIBUTING.md
-**Purpose**: Guidelines for contributing to the project
+## Key Concepts
 
-**Contents**:
-- Development setup
-- Code style and standards
-- Pull request process
-- Testing requirements
-- Documentation guidelines
+### Blackboard Pattern
 
-**When to Read**: You want to contribute code or improve documentation
+The system uses a **Blackboard Pattern** (shared state) for multi-agent coordination:
+- All agents read from and write to `ReviewState`
+- Agents run in parallel for 50% faster analysis
+- Summarizer intelligently deduplicates findings
+
+See [ARCHITECTURE.md#the-blackboard-pattern-solution](ARCHITECTURE.md#the-blackboard-pattern-solution)
+
+### Three-Phase Workflow
+
+1. **Phase A**: Logic and Security agents analyze PR independently
+2. **Phase B**: Check if any critical issues warrant blocking
+3. **Phase C**: Summarizer synthesizes findings into a comment
+
+See [ARCHITECTURE.md#workflow-phases](ARCHITECTURE.md#workflow-phases)
+
+### Integration Points
+
+- **GitHub**: Webhooks for automatic PR review triggers
+- **LLM**: Claude or GPT-4 for semantic code analysis
+- **Cache**: Redis or file-based for finding deduplication
 
 ---
 
-### CACHING_STRATEGY.md
-**Purpose**: Optimize performance through caching
+## Testing
 
-**Contents**:
-- Cache backends (memory, file, Redis)
-- Cache configuration
-- Performance impact
-- Cache invalidation strategies
-- Cost optimization
+### Quick Test
+
+```bash
+# Start server
+python -m uvicorn src.code_reviewer.main:app &
+
+# Test direct review endpoint
+python tests/examples.py direct --pr-number 15
+
+# Run diagnostics
+python tests/diagnose.py
+```
+
+### Full Test Suite
+
+```bash
+pytest tests/ -v
+```
+
+See [OPERATIONS.md#testing](OPERATIONS.md#testing) for detailed testing procedures.
+
+---
+
+## Support
+
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/your-org/agentic-review-gate/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/your-org/agentic-review-gate/discussions)
+- 📖 **Documentation**: See docs above
+- 🤝 **Contributing**: See [ARCHITECTURE.md#contributing-guidelines](ARCHITECTURE.md#contributing-guidelines)
+
+---
+
+## Document Consolidation
+
+This documentation was consolidated from 9+ files into 4 comprehensive guides:
+
+- **SETUP.md**: Merged Windows setup + LLM setup
+- **INTEGRATION.md**: Merged webhook docs + LLM provider setup
+- **OPERATIONS.md**: Merged testing + deployment + performance/caching docs
+- **ARCHITECTURE.md**: Merged system design + contributing guidelines
+
+This 4-file structure eliminates duplication while maintaining comprehensive coverage.
+
+---
+
+**Last Updated**: 2024 | **Version**: 1.0
 
 **When to Read**: You want to improve performance or reduce API costs
 
