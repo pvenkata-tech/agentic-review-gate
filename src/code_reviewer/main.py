@@ -383,7 +383,61 @@ async def _run_review_background(request: ReviewRequest) -> None:
         request: Review request with PR details
     """
     try:
-        await _execute_review(request, BackgroundTasks())
+        # Initialize GitHub client for comment posting
+        github_config = GitHubConfig(
+            token=request.github_token,
+            owner=request.owner,
+            repo=request.repo,
+        )
+        github_client = GitHubClient(github_config)
+        
+        # Fetch PR metadata
+        pr_info = await github_client.get_pr_info(request.pr_number)
+        pr_diff = await github_client.get_pr_diff(request.pr_number)
+        
+        # Extract data for ReviewState
+        pr_metadata = PRMetadata(
+            pr_number=request.pr_number,
+            title=pr_info["title"],
+            author=pr_info["user"]["login"],
+            branch=pr_info["head"]["ref"],
+            base_branch=pr_info["base"]["ref"],
+            diff_content=pr_diff,
+            files_changed=[f["filename"] for f in pr_info.get("files", [])],
+            additions=pr_info.get("additions", 0),
+            deletions=pr_info.get("deletions", 0),
+        )
+        
+        # Load previous findings from cache for deduplication
+        cache_key = f"pr:{request.pr_number}:findings"
+        previous_finding_ids = cache_backend.get(cache_key)
+        
+        # Create initial state
+        initial_state = ReviewState(pr_metadata=pr_metadata)
+        
+        # Run review with deduplication support
+        review_state = await coordinator.review_pr(
+            initial_state,
+            previous_finding_ids=previous_finding_ids
+        )
+        
+        # Cache the new findings for next review
+        new_finding_ids = review_state.get_finding_ids()
+        if new_finding_ids:
+            cache_backend.set(cache_key, new_finding_ids, ex=86400*30)  # 30 days
+        
+        # Post comment to GitHub synchronously (not in background task)
+        if review_state.final_summary:
+            await _post_review_comment(
+                github_client,
+                request.pr_number,
+                review_state.final_summary,
+            )
+        
+        logger.info(
+            f"Completed PR review #%d with webhook processing",
+            request.pr_number
+        )
     except Exception as e:
         logger.error(f"Background review failed: {str(e)}", pr_number=request.pr_number)
 
