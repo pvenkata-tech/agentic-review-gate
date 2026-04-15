@@ -104,6 +104,23 @@ async def review_pr(request: ReviewRequest, background_tasks: BackgroundTasks):
     Raises:
         HTTPException: If PR not found or review fails
     """
+    return await _execute_review(request, background_tasks)
+
+
+async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTasks) -> ReviewResponse:
+    """
+    Execute the actual PR review logic.
+    
+    This is extracted into a separate function so it can be called from both
+    the REST endpoint and the background task triggered by webhooks.
+    
+    Args:
+        request: ReviewRequest with PR details
+        background_tasks: FastAPI background tasks for posting comments
+        
+    Returns:
+        ReviewResponse with findings summary
+    """
     try:
         logger.log_pr_review_start(request.pr_number, "unknown")
         
@@ -356,13 +373,13 @@ async def _run_review_background(request: ReviewRequest) -> None:
     """
     Run review in background (triggered by webhook).
     
+    This executes the review logic asynchronously without blocking the webhook response.
+    
     Args:
-        request: Review request
+        request: Review request with PR details
     """
     try:
-        # Create a temporary endpoint call to run review
-        # In production, would share the coordinator instance
-        await review_pr(request, BackgroundTasks())
+        await _execute_review(request, BackgroundTasks())
     except Exception as e:
         logger.error(f"Background review failed: {str(e)}", pr_number=request.pr_number)
 
