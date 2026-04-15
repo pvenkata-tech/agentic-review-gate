@@ -208,10 +208,15 @@ class MockLLMClient(LLMClient):
 
 def get_llm_client(provider: str = None) -> LLMClient:
     """
-    Factory function to get LLM client.
+    Factory function to get LLM client with automatic fallback.
+    
+    Priority order:
+    1. Try Anthropic Claude (if API key available)
+    2. Fall back to OpenAI GPT-4 (if API key available)
+    3. Fall back to Mock client for development
     
     Args:
-        provider: "claude", "gpt4", "mock", or None for auto-detection
+        provider: "claude", "gpt4", "mock", or None for auto-detection with fallback
         
     Returns:
         Configured LLM client
@@ -220,14 +225,8 @@ def get_llm_client(provider: str = None) -> LLMClient:
         ValueError: If provider not found and no API keys configured
     """
     if provider is None:
-        # Auto-detect based on available API keys
-        if os.getenv("ANTHROPIC_API_KEY"):
-            provider = "claude"
-        elif os.getenv("OPENAI_API_KEY"):
-            provider = "gpt4"
-        else:
-            # Default to mock for development
-            provider = "mock"
+        # Auto-detect with automatic fallback on error
+        return _auto_detect_with_fallback()
     
     provider = provider.lower()
     
@@ -239,3 +238,40 @@ def get_llm_client(provider: str = None) -> LLMClient:
         return MockLLMClient()
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
+
+
+def _auto_detect_with_fallback() -> LLMClient:
+    """
+    Auto-detect LLM provider with automatic fallback on errors.
+    
+    Tries providers in order of preference:
+    1. Anthropic Claude
+    2. OpenAI GPT-4
+    3. Mock (development)
+    
+    Returns:
+        Configured LLM client
+    """
+    # Try Anthropic Claude first (primary provider)
+    if os.getenv("ANTHROPIC_API_KEY"):
+        try:
+            client = ClaudeClient()
+            print("✓ Initialized Anthropic Claude client")
+            return client
+        except Exception as e:
+            print(f"⚠ Failed to initialize Claude: {str(e)}")
+            print("  Attempting fallback to OpenAI GPT-4...")
+    
+    # Fall back to OpenAI GPT-4
+    if os.getenv("OPENAI_API_KEY"):
+        try:
+            client = GPT4Client()
+            print("✓ Initialized OpenAI GPT-4 client (fallback)")
+            return client
+        except Exception as e:
+            print(f"⚠ Failed to initialize GPT-4: {str(e)}")
+            print("  Falling back to Mock client for development...")
+    
+    # Final fallback to Mock client
+    print("ℹ Using Mock LLM client (no API calls)")
+    return MockLLMClient()
