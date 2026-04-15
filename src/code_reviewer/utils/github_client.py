@@ -12,6 +12,7 @@ import os
 from typing import Optional
 import httpx
 from dataclasses import dataclass
+import re
 
 
 @dataclass
@@ -171,19 +172,26 @@ class GitHubClient:
         
         return True
     
-    async def get_pr_diff(self, pr_number: int) -> str:
+    async def get_pr_diff(self, pr_number: int, token_budget: int = 100000) -> str:
         """
-        Fetch the full diff for a PR by reconstructing from files endpoint.
+        Fetch the full diff for a PR with intelligent token budgeting.
         
         The files endpoint includes a 'patch' field with unified diff for each file.
         Filters out non-code files (lockfiles, minified, auto-generated) to reduce
         token usage and noise sent to LLMs.
         
+        Token Budgeting:
+        - Prioritizes .py, .js, .ts files (highest value for analysis)
+        - Includes medium-priority files (.java, .go, .rs, .cs)
+        - Skips low-priority files (.md, .json, .yaml) if budget exceeded
+        - Redacts secrets before returning
+        
         Args:
             pr_number: GitHub PR number
+            token_budget: Maximum tokens to include (default 100k ≈ 400k chars)
             
         Returns:
-            Unified diff content as string (non-code files filtered)
+            Unified diff content as string (redacted, filtered, budget-aware)
         """
         from code_reviewer.utils.logger import get_logger
         logger = get_logger()
@@ -192,40 +200,76 @@ class GitHubClient:
             # Get all files changed in the PR
             files = await self.get_pr_files(pr_number)
             
-            # Build unified diff from file patches (with filtering)
+            # Prioritize files by importance for analysis
+            sorted_files = self._prioritize_files(files)
+            
+            # Build unified diff with token budgeting
             diff_parts = []
             skipped_files = []
             included_files = []
+            token_count = 0
+            budget_exceeded = False
             
-            for file in files:
+            for file in sorted_files:
                 filename = file.get("filename", "unknown")
                 patch = file.get("patch", "")
                 
                 # Filter out non-code files
                 if not self._should_include_file(filename):
-                    skipped_files.append(filename)
+                    skipped_files.append({"name": filename, "reason": "filtered"})
                     continue
                 
-                # Each file already has a patch with proper headers, just concatenate
+                # Estimate tokens for this file
+                file_tokens = self._estimate_tokens(patch)
+                
+                # Token budgeting: skip low-priority files if budget exceeded
+                if budget_exceeded:
+                    priority = self._get_file_priority_category(filename)
+                    if priority != 'high':
+                        skipped_files.append({"name": filename, "reason": "token_budget"})
+                        continue
+                
+                # Add file to diff
                 if patch:
                     diff_parts.append(patch)
                     diff_parts.append("")  # Blank line between files
                     included_files.append(filename)
+                    token_count += file_tokens
+                    
+                    # Check if we've exceeded budget
+                    if token_count > token_budget:
+                        budget_exceeded = True
+                        logger.warning(
+                            f"Token budget exceeded for PR #{pr_number}",
+                            token_count=token_count,
+                            budget=token_budget,
+                            files_included=len(included_files),
+                            files_skipped_due_to_budget=len([s for s in skipped_files if s.get('reason') == 'token_budget'])
+                        )
             
             diff_content = "\n".join(diff_parts)
+            
+            # Apply secret redaction (critical for security)
+            diff_content = self._redact_secrets(diff_content)
+            
             logger.info(
-                f"Built PR #{pr_number} diff",
+                f"Built PR #{pr_number} diff with token budgeting",
                 total_files=len(files),
                 included_files=len(included_files),
                 skipped_files=len(skipped_files),
-                diff_size=len(diff_content)
+                token_count=token_count,
+                token_budget=token_budget,
+                diff_size=len(diff_content),
+                budget_exceeded=budget_exceeded
             )
             
             if skipped_files:
-                logger.debug(
-                    f"Skipped {len(skipped_files)} non-code files for PR #{pr_number}",
-                    skipped=skipped_files[:5]  # Log first 5 for debugging
-                )
+                filtered_count = len([s for s in skipped_files if s.get('reason') == 'filtered'])
+                budget_count = len([s for s in skipped_files if s.get('reason') == 'token_budget'])
+                if filtered_count > 0:
+                    logger.debug(f"Skipped {filtered_count} non-code files for PR #{pr_number}")
+                if budget_count > 0:
+                    logger.debug(f"Skipped {budget_count} low-priority files due to token budget for PR #{pr_number}")
             
             if not diff_content or diff_content.strip() == "":
                 logger.warning(f"PR #{pr_number} has no code changes to analyze")
