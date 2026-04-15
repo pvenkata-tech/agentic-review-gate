@@ -173,8 +173,13 @@ class SecurityGuardAgent(BaseAgent):
         for file_diff in file_diffs[:10]:  # Limit to first 10 files
             result.append(f"\n### {file_diff.file_path}")
             
+            # Collect all lines from all hunks
+            all_lines = []
+            for hunk in file_diff.hunks:
+                all_lines.extend(hunk.lines)
+            
             # Include first 500 chars of diff
-            content_preview = "\n".join(file_diff.lines[:20])
+            content_preview = "\n".join(all_lines[:20])
             result.append(f"```\n{content_preview[:500]}...\n```")
         
         return "\n".join(result)
