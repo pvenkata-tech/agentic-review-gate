@@ -384,7 +384,6 @@ async def _run_review_background(request: ReviewRequest) -> None:
     """
     try:
         await _execute_review(request, BackgroundTasks())
->>>>>>> dd79365 (feat: Agentic code review system with GitHub webhook integration and comprehensive improvements)
     except Exception as e:
         logger.error(f"Background review failed: {str(e)}", pr_number=request.pr_number)
 
