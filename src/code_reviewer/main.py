@@ -113,10 +113,12 @@ async def review_pr(request: ReviewRequest, background_tasks: BackgroundTasks):
 
 async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTasks) -> ReviewResponse:
     """
-    Execute the actual PR review logic.
+    Execute the actual PR review logic with CI error handling.
     
     This is extracted into a separate function so it can be called from both
     the REST endpoint and the background task triggered by webhooks.
+    
+    If review fails, posts error comment to GitHub (CI Feedback Loop).
     
     Args:
         request: ReviewRequest with PR details
@@ -124,7 +126,11 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
         
     Returns:
         ReviewResponse with findings summary
+        
+    Raises:
+        HTTPException: If review fails (after attempting to post error comment)
     """
+    github_client = None
     try:
         logger.log_pr_review_start(request.pr_number, "unknown")
         
@@ -134,7 +140,7 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
             owner=request.owner,
             repo=request.repo,
         )
-        github_client = GitHubClient(github_config)
+        github_client = GitHubClient(github_config)  # Store for error handling
         
         # Fetch PR metadata
         pr_info = await github_client.get_pr_info(request.pr_number)
@@ -233,6 +239,30 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
     
     except Exception as e:
         logger.error(f"Review failed for PR {request.pr_number}: {str(e)}")
+        
+        # Try to post error comment if we have a GitHub client
+        if github_client:
+            try:
+                error_msg = str(e)[:500] + "..." if len(str(e)) > 500 else str(e)
+                error_comment = f"""## ⚠️ Review Failed
+
+The automated code review encountered a technical error:
+
+```
+{error_msg}
+```
+
+Please contact the repository maintainers if this issue persists."""
+                
+                existing_comment_id = await github_client.find_review_comment(request.pr_number)
+                if existing_comment_id:
+                    await github_client.update_review_comment(existing_comment_id, error_comment)
+                else:
+                    await github_client.post_review_comment(request.pr_number, error_comment)
+                logger.info(f"Posted error notification to PR #{request.pr_number}")
+            except Exception as post_error:
+                logger.error(f"Failed to post error comment: {str(post_error)}")
+        
         raise HTTPException(
             status_code=500,
             detail=f"Review failed: {str(e)}",
@@ -461,6 +491,7 @@ async def _run_review_background(request: ReviewRequest) -> None:
     Run review in background (triggered by webhook).
     
     This executes the review logic asynchronously without blocking the webhook response.
+    On error, posts a comment to the PR with details so the PR isn't left hanging.
     
     Args:
         request: Review request with PR details
@@ -469,6 +500,76 @@ async def _run_review_background(request: ReviewRequest) -> None:
         await _execute_review(request, BackgroundTasks())
     except Exception as e:
         logger.error(f"Background review failed: {str(e)}", pr_number=request.pr_number)
+        
+        # Post error comment to GitHub so PR isn't left hanging
+        await _post_error_comment(
+            github_token=request.github_token,
+            owner=request.owner,
+            repo=request.repo,
+            pr_number=request.pr_number,
+            error=str(e)
+        )
+
+
+async def _post_error_comment(
+    github_token: str,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    error: str,
+) -> None:
+    """
+    Post an error comment to GitHub when review fails (CI Feedback Loop).
+    
+    This ensures developers know the review failed and aren't left waiting
+    for feedback that will never come. Helps with debugging and monitoring.
+    
+    Args:
+        github_token: GitHub API token
+        owner: Repository owner
+        repo: Repository name
+        pr_number: PR number
+        error: Error message/traceback
+    """
+    try:
+        # Create GitHub client
+        github_config = GitHubConfig(
+            token=github_token,
+            owner=owner,
+            repo=repo,
+        )
+        github_client = GitHubClient(github_config)
+        
+        # Truncate error if too long
+        error_display = error[:500] + "..." if len(error) > 500 else error
+        
+        error_comment = f"""## ⚠️ Review Failed
+
+The automated code review encountered a technical error and could not complete:
+
+```
+{error_display}
+```
+
+Please contact the repository maintainer if this issue persists.
+
+*This error notification was automatically posted because the review encountered an exception.*
+"""
+        
+        # Check if bot already commented (to avoid duplicate error posts)
+        existing_comment_id = await github_client.find_review_comment(pr_number)
+        
+        if existing_comment_id:
+            await github_client.update_review_comment(existing_comment_id, error_comment)
+            logger.info(f"Updated error comment on PR #{pr_number}", comment_id=existing_comment_id)
+        else:
+            result = await github_client.post_review_comment(pr_number, error_comment)
+            logger.info(f"Posted error comment on PR #{pr_number}", comment_id=result.get("id"))
+    except Exception as post_error:
+        logger.error(
+            f"Failed to post error comment to PR #{pr_number}: {str(post_error)}",
+            original_error=error
+        )
 
 
 if __name__ == "__main__":
