@@ -1,0 +1,314 @@
+<svg viewBox="0 0 1400 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Modern AI color gradients -->
+    <linearGradient id="gradAI1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradAI2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8b5cf6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradAI3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ec4899;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f43f5e;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradAI4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#14b8a6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e1b4b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f172a;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Filters -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-opacity="0.2" flood-color="#000"/>
+    </filter>
+    <filter id="shadowLarge" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-opacity="0.25" flood-color="#000"/>
+    </filter>
+
+    <!-- Animation keyframes -->
+    <style>
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
+      @keyframes glow {
+        0%, 100% { filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.6)); }
+        50% { filter: drop-shadow(0 0 16px rgba(99, 102, 241, 1)); }
+      }
+      @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-8px); }
+      }
+      @keyframes slideIn {
+        0% { opacity: 0; transform: translateX(-20px); }
+        100% { opacity: 1; transform: translateX(0); }
+      }
+      @keyframes smoothFlow {
+        0% { stroke-dashoffset: 20; }
+        100% { stroke-dashoffset: 0; }
+      }
+      @keyframes dotMove {
+        0% { opacity: 0; }
+        20% { opacity: 1; }
+        80% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes spinSoft {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .pulse { animation: pulse 2s ease-in-out infinite; }
+      .glow { animation: glow 2s ease-in-out infinite; }
+      .float { animation: float 3s ease-in-out infinite; }
+      .slideIn1 { animation: slideIn 0.8s ease-out; }
+      .slideIn2 { animation: slideIn 0.8s ease-out 0.2s both; }
+      .slideIn3 { animation: slideIn 0.8s ease-out 0.4s both; }
+      .slideIn4 { animation: slideIn 0.8s ease-out 0.6s both; }
+      .slideIn5 { animation: slideIn 0.8s ease-out 0.8s both; }
+      .smoothFlow { animation: smoothFlow 1.8s ease-in-out infinite; }
+      .dotMove { animation: dotMove 2s ease-in-out infinite; }
+      .spin { animation: spinSoft 8s linear infinite; }
+    </style>
+
+    <marker id="arrowMod" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <polygon points="0 0, 10 5, 0 10" fill="#06b6d4" opacity="0.7"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="800" fill="#f8fafc"/>
+  
+  <!-- Animated background circles -->
+  <circle cx="200" cy="150" r="120" fill="#6366f1" opacity="0.05"/>
+  <circle cx="1200" cy="650" r="150" fill="#14b8a6" opacity="0.05"/>
+  <circle cx="700" cy="400" r="180" fill="#8b5cf6" opacity="0.03"/>
+
+  <!-- Title -->
+  <g class="slideIn1">
+    <text x="700" y="50" font-size="36" font-weight="700" text-anchor="middle" fill="#1e293b">
+      Multi-Agent PR Review System
+    </text>
+    <text x="700" y="80" font-size="14" text-anchor="middle" fill="#64748b">
+      Blackboard Pattern • Parallel Processing • AI-Powered Analysis
+    </text>
+  </g>
+
+  <!-- PHASE 1: Input -->
+  <g class="slideIn1" filter="url(#shadowLarge)">
+    <rect x="50" y="140" width="160" height="120" rx="16" fill="url(#gradAI1)"/>
+    <circle cx="100" cy="190" r="28" fill="#ffffff" opacity="0.15"/>
+    <text x="130" y="210" font-size="48" text-anchor="middle">📋</text>
+    <text x="130" y="240" font-size="14" font-weight="600" text-anchor="middle" fill="#ffffff">PR Input</text>
+  </g>
+
+  <!-- Arrow 1: Input to Logic/Security -->
+  <g class="slideIn2">
+    <line x1="210" y1="200" x2="280" y2="200" stroke="#06b6d4" stroke-width="2" opacity="0.5" class="smoothFlow" stroke-dasharray="8,5"/>
+    <line x1="210" y1="200" x2="280" y2="200" stroke="#06b6d4" stroke-width="1.5" opacity="0.3" marker-end="url(#arrowMod)"/>
+    <!-- Single dot flowing -->
+    <circle cx="240" cy="200" r="2" fill="#06b6d4" opacity="0.6" class="dotMove"/>
+  </g>
+
+  <!-- PHASE 2: Parallel Agents -->
+  <!-- Logic Agent -->
+  <g class="slideIn2" filter="url(#shadowLarge)">
+    <rect x="280" y="120" width="160" height="160" rx="16" fill="url(#gradAI2)"/>
+    <circle cx="320" cy="170" r="26" fill="#ffffff" opacity="0.12"/>
+    <text x="360" y="190" font-size="44" text-anchor="middle">🧠</text>
+    <text x="360" y="220" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">Logic Agent</text>
+    <text x="360" y="237" font-size="10" text-anchor="middle" fill="#e0e7ff">Design Patterns</text>
+    <text x="360" y="250" font-size="10" text-anchor="middle" fill="#e0e7ff">SOLID Principles</text>
+    <rect x="290" y="265" width="140" height="3" rx="2" fill="#ffffff" opacity="0.3"/>
+  </g>
+
+  <!-- Security Agent -->
+  <g class="slideIn2" filter="url(#shadowLarge)">
+    <rect x="280" y="320" width="160" height="160" rx="16" fill="url(#gradAI3)"/>
+    <circle cx="320" cy="370" r="26" fill="#ffffff" opacity="0.12"/>
+    <text x="360" y="390" font-size="44" text-anchor="middle">🔒</text>
+    <text x="360" y="420" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">Security Agent</text>
+    <text x="360" y="437" font-size="10" text-anchor="middle" fill="#fce7f3">Vulnerabilities</text>
+    <text x="360" y="450" font-size="10" text-anchor="middle" fill="#fce7f3">Secrets &amp; Threats</text>
+    <rect x="290" y="465" width="140" height="3" rx="2" fill="#ffffff" opacity="0.3"/>
+  </g>
+
+  <!-- Parallel badge -->
+  <g class="slideIn3">
+    <circle cx="360" cy="550" r="22" fill="#ffffff" stroke="#8b5cf6" stroke-width="2" opacity="0.9"/>
+    <text x="360" y="556" font-size="12" font-weight="700" text-anchor="middle" fill="#8b5cf6">||</text>
+  </g>
+
+  <!-- Arrows to Blackboard -->
+  <g class="slideIn3">
+    <!-- Top arrow: Logic to Blackboard -->
+    <path d="M 440 200 Q 500 250 540 280" stroke="#06b6d4" stroke-width="2" fill="none" opacity="0.5" class="smoothFlow" stroke-dasharray="8,5" marker-end="url(#arrowMod)"/>
+    <path d="M 440 200 Q 500 250 540 280" stroke="#06b6d4" stroke-width="1" fill="none" opacity="0.2"/>
+    <!-- Dot along path -->
+    <circle cx="480" cy="250" r="2" fill="#06b6d4" class="dotMove"/>
+  </g>
+
+  <g class="slideIn3">
+    <!-- Bottom arrow: Security to Blackboard -->
+    <path d="M 440 400 Q 500 350 540 320" stroke="#06b6d4" stroke-width="2" fill="none" opacity="0.5" class="smoothFlow" stroke-dasharray="8,5" marker-end="url(#arrowMod)"/>
+    <path d="M 440 400 Q 500 350 540 320" stroke="#06b6d4" stroke-width="1" fill="none" opacity="0.2"/>
+    <!-- Dot along path -->
+    <circle cx="480" cy="350" r="2" fill="#06b6d4" class="dotMove"/>
+  </g>
+
+  <!-- PHASE 3: Blackboard (Central State) -->
+  <g class="slideIn4" filter="url(#shadowLarge)">
+    <rect x="540" y="200" width="280" height="260" rx="20" fill="url(#gradDark)" stroke="#14b8a6" stroke-width="3"/>
+    
+    <!-- Inner glow -->
+    <rect x="560" y="220" width="240" height="220" rx="16" fill="none" stroke="#14b8a6" stroke-width="1" opacity="0.3"/>
+    
+    <!-- Title -->
+    <rect x="560" y="220" width="240" height="40" rx="12" fill="#0f172a" stroke="#14b8a6" stroke-width="1.5"/>
+    <text x="680" y="248" font-size="14" font-weight="700" text-anchor="middle" fill="#14b8a6">ReviewState</text>
+    
+    <!-- Content -->
+    <text x="575" y="285" font-size="10" fill="#a5f3fc" font-weight="500">✓ PR Metadata</text>
+    <text x="575" y="305" font-size="10" fill="#a5f3fc" font-weight="500">✓ All Findings</text>
+    <text x="575" y="325" font-size="10" fill="#a5f3fc" font-weight="500">✓ Severity Ranking</text>
+    <text x="575" y="345" font-size="10" fill="#a5f3fc" font-weight="500">✓ Block Status</text>
+    <text x="575" y="365" font-size="10" fill="#a5f3fc" font-weight="500">✓ Execution Data</text>
+    <text x="575" y="385" font-size="10" fill="#a5f3fc" font-weight="500">✓ Final Summary</text>
+    
+    <!-- Animated inner circle -->
+    <circle cx="680" cy="300" r="80" fill="none" stroke="#06b6d4" stroke-width="1" opacity="0.2" class="spin"/>
+    <circle cx="680" cy="300" r="75" fill="none" stroke="#14b8a6" stroke-width="1.5" opacity="0.4"/>
+  </g>
+
+  <!-- Arrow to Summarizer -->
+  <g class="slideIn4">
+    <!-- Main flowing arrow -->
+    <line x1="820" y1="330" x2="900" y2="330" stroke="#14b8a6" stroke-width="2" opacity="0.5" class="smoothFlow" stroke-dasharray="8,5" marker-end="url(#arrowMod)"/>
+    <!-- Base layer -->
+    <line x1="820" y1="330" x2="900" y2="330" stroke="#14b8a6" stroke-width="1" opacity="0.2"/>
+    <!-- Single dot flowing -->
+    <circle cx="860" cy="330" r="2" fill="#14b8a6" opacity="0.6" class="dotMove"/>
+  </g>
+
+  <!-- PHASE 4: Synthesizer -->
+  <g class="slideIn5" filter="url(#shadowLarge)">
+    <rect x="900" y="220" width="180" height="220" rx="16" fill="url(#gradAI4)"/>
+    <circle cx="950" cy="270" r="28" fill="#ffffff" opacity="0.15"/>
+    <text x="990" y="290" font-size="48" text-anchor="middle">✨</text>
+    <text x="990" y="320" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">Summarizer</text>
+    <text x="990" y="337" font-size="10" text-anchor="middle" fill="#ccfbf1">Deduplicate</text>
+    <text x="990" y="350" font-size="10" text-anchor="middle" fill="#ccfbf1">Organize</text>
+    <text x="990" y="363" font-size="10" text-anchor="middle" fill="#ccfbf1">Professional Tone</text>
+    <rect x="910" y="375" width="160" height="3" rx="2" fill="#ffffff" opacity="0.3"/>
+  </g>
+
+  <!-- Arrow to Output -->
+  <g class="slideIn5">
+    <!-- Main flowing arrow -->
+    <line x1="1080" y1="330" x2="1160" y2="330" stroke="#14b8a6" stroke-width="2" opacity="0.5" class="smoothFlow" stroke-dasharray="8,5" marker-end="url(#arrowMod)"/>
+    <!-- Base layer -->
+    <line x1="1080" y1="330" x2="1160" y2="330" stroke="#14b8a6" stroke-width="1" opacity="0.2"/>
+    <!-- Single dot flowing -->
+    <circle cx="1120" cy="330" r="2" fill="#14b8a6" opacity="0.6" class="dotMove"/>
+  </g>
+
+  <!-- PHASE 5: Output -->
+  <g class="slideIn5" filter="url(#shadowLarge)">
+    <rect x="1160" y="220" width="180" height="220" rx="16" fill="url(#gradAI1)"/>
+    <circle cx="1210" cy="270" r="28" fill="#ffffff" opacity="0.15"/>
+    <text x="1250" y="290" font-size="48" text-anchor="middle">💬</text>
+    <text x="1250" y="320" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">GitHub</text>
+    <text x="1250" y="333" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">Comment</text>
+    
+    <!-- Sample comment box -->
+    <rect x="1175" y="350" width="150" height="70" rx="8" fill="#ffffff" opacity="0.1" stroke="#e0e7ff" stroke-width="1"/>
+    <circle cx="1200" cy="362" r="3" fill="#3b82f6" opacity="0.6"/>
+    <circle cx="1210" cy="362" r="3" fill="#3b82f6" opacity="0.6"/>
+    <circle cx="1220" cy="362" r="3" fill="#3b82f6" opacity="0.6"/>
+    <line x1="1175" y1="370" x2="1325" y2="370" stroke="#e0e7ff" stroke-width="1" opacity="0.3"/>
+    <line x1="1175" y1="378" x2="1320" y2="378" stroke="#e0e7ff" stroke-width="1" opacity="0.3"/>
+    <line x1="1175" y1="386" x2="1315" y2="386" stroke="#e0e7ff" stroke-width="1" opacity="0.3"/>
+  </g>
+
+  <!-- Stats/Metrics Section -->
+  <g>
+    <!-- Phase Timeline -->
+    <text x="50" y="580" font-size="14" font-weight="700" fill="#1e293b">Execution Timeline</text>
+    
+    <!-- Phase A -->
+    <g filter="url(#shadow)">
+      <rect x="50" y="610" width="100" height="60" rx="8" fill="#ffffff" stroke="#6366f1" stroke-width="2"/>
+      <text x="100" y="630" font-size="12" font-weight="600" text-anchor="middle" fill="#6366f1">Phase A</text>
+      <text x="100" y="648" font-size="11" text-anchor="middle" fill="#64748b">Parallel</text>
+      <text x="100" y="662" font-size="10" text-anchor="middle" fill="#94a3b8">~500ms</text>
+    </g>
+
+    <!-- Phase B -->
+    <g filter="url(#shadow)">
+      <rect x="180" y="610" width="100" height="60" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="230" y="630" font-size="12" font-weight="600" text-anchor="middle" fill="#8b5cf6">Phase B</text>
+      <text x="230" y="648" font-size="11" text-anchor="middle" fill="#64748b">Evaluate</text>
+      <text x="230" y="662" font-size="10" text-anchor="middle" fill="#94a3b8">&lt;1ms</text>
+    </g>
+
+    <!-- Phase C -->
+    <g filter="url(#shadow)">
+      <rect x="310" y="610" width="100" height="60" rx="8" fill="#ffffff" stroke="#ec4899" stroke-width="2"/>
+      <text x="360" y="630" font-size="12" font-weight="600" text-anchor="middle" fill="#ec4899">Phase C</text>
+      <text x="360" y="648" font-size="11" text-anchor="middle" fill="#64748b">Synthesis</text>
+      <text x="360" y="662" font-size="10" text-anchor="middle" fill="#94a3b8">~50ms</text>
+    </g>
+
+    <!-- Total with LLM -->
+    <g filter="url(#shadow)">
+      <rect x="440" y="610" width="120" height="60" rx="8" fill="url(#gradAI4)" stroke="#06b6d4" stroke-width="2"/>
+      <text x="500" y="625" font-size="11" font-weight="600" text-anchor="middle" fill="#ffffff">With LLM</text>
+      <text x="500" y="640" font-size="11" text-anchor="middle" fill="#ccfbf1">5-20 seconds</text>
+      <text x="500" y="662" font-size="9" text-anchor="middle" fill="#ccfbf1">Full Analysis</text>
+    </g>
+  </g>
+
+  <!-- Key Benefits -->
+  <g>
+    <text x="50" y="730" font-size="13" font-weight="700" fill="#1e293b">✓ Key Advantages:</text>
+    <text x="50" y="755" font-size="11" fill="#475569">No Context Loss • Parallel Execution (50% faster) • Intelligent Deduplication • Loose Coupling • Professional Synthesis • Extensible Architecture</text>
+  </g>
+
+  <!-- Features Icons Row -->
+  <g>
+    <g filter="url(#shadow)">
+      <rect x="820" y="600" width="90" height="70" rx="8" fill="#ffffff" stroke="#6366f1" stroke-width="1" opacity="0.8"/>
+      <text x="865" y="628" font-size="20" text-anchor="middle">⚡</text>
+      <text x="865" y="652" font-size="9" font-weight="600" text-anchor="middle" fill="#1e293b">Fast</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="930" y="600" width="90" height="70" rx="8" fill="#ffffff" stroke="#8b5cf6" stroke-width="1" opacity="0.8"/>
+      <text x="975" y="628" font-size="20" text-anchor="middle">🧩</text>
+      <text x="975" y="652" font-size="9" font-weight="600" text-anchor="middle" fill="#1e293b">Modular</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="1040" y="600" width="90" height="70" rx="8" fill="#ffffff" stroke="#ec4899" stroke-width="1" opacity="0.8"/>
+      <text x="1085" y="628" font-size="20" text-anchor="middle">🎯</text>
+      <text x="1085" y="652" font-size="9" font-weight="600" text-anchor="middle" fill="#1e293b">Accurate</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="1150" y="600" width="90" height="70" rx="8" fill="#ffffff" stroke="#14b8a6" stroke-width="1" opacity="0.8"/>
+      <text x="1195" y="628" font-size="20" text-anchor="middle">🔄</text>
+      <text x="1195" y="652" font-size="9" font-weight="600" text-anchor="middle" fill="#1e293b">Async</text>
+    </g>
+  </g>
+</svg>
