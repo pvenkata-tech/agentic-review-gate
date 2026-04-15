@@ -130,17 +130,60 @@ class GitHubClient:
             logger.error(f"Failed to fetch PR files list: {str(e)}", pr_number=pr_number)
             raise
     
+    def _should_include_file(self, filename: str) -> bool:
+        """
+        Determine if a file should be included in analysis.
+        
+        Filters out non-code files to reduce token usage and noise:
+        - Lockfiles (package-lock.json, poetry.lock, Gemfile.lock, yarn.lock)
+        - Minified/generated files (*.min.js, *.min.css, dist/*, build/*)
+        - Binary/media files (handled separately, but filter here for safety)
+        
+        Args:
+            filename: File path to check
+            
+        Returns:
+            True if file should be analyzed, False to skip
+        """
+        # Lockfiles that shouldn't be analyzed
+        lockfiles = {
+            'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+            'poetry.lock', 'pipfile.lock', 'gemfile.lock',
+            'composer.lock', 'mix.lock'
+        }
+        
+        # Patterns to skip
+        skip_patterns = [
+            '.min.js', '.min.css',  # Minified
+            'dist/', 'build/', '.next/', '.venv/', 'node_modules/',  # Generated/deps
+            '.git', '.github/', '.vscode/',  # Config/meta
+        ]
+        
+        # Check lockfiles
+        basename = filename.split('/')[-1].lower()
+        if basename in lockfiles:
+            return False
+        
+        # Check patterns
+        for pattern in skip_patterns:
+            if pattern in filename.lower():
+                return False
+        
+        return True
+    
     async def get_pr_diff(self, pr_number: int) -> str:
         """
         Fetch the full diff for a PR by reconstructing from files endpoint.
         
         The files endpoint includes a 'patch' field with unified diff for each file.
+        Filters out non-code files (lockfiles, minified, auto-generated) to reduce
+        token usage and noise sent to LLMs.
         
         Args:
             pr_number: GitHub PR number
             
         Returns:
-            Unified diff content as string
+            Unified diff content as string (non-code files filtered)
         """
         from code_reviewer.utils.logger import get_logger
         logger = get_logger()
@@ -149,23 +192,43 @@ class GitHubClient:
             # Get all files changed in the PR
             files = await self.get_pr_files(pr_number)
             
-            # Build unified diff from file patches
+            # Build unified diff from file patches (with filtering)
             diff_parts = []
+            skipped_files = []
+            included_files = []
             
             for file in files:
                 filename = file.get("filename", "unknown")
                 patch = file.get("patch", "")
                 
+                # Filter out non-code files
+                if not self._should_include_file(filename):
+                    skipped_files.append(filename)
+                    continue
+                
                 # Each file already has a patch with proper headers, just concatenate
                 if patch:
                     diff_parts.append(patch)
                     diff_parts.append("")  # Blank line between files
+                    included_files.append(filename)
             
             diff_content = "\n".join(diff_parts)
-            logger.info(f"Built PR #{pr_number} diff from {len(files)} files: {len(diff_content)} characters")
+            logger.info(
+                f"Built PR #{pr_number} diff",
+                total_files=len(files),
+                included_files=len(included_files),
+                skipped_files=len(skipped_files),
+                diff_size=len(diff_content)
+            )
+            
+            if skipped_files:
+                logger.debug(
+                    f"Skipped {len(skipped_files)} non-code files for PR #{pr_number}",
+                    skipped=skipped_files[:5]  # Log first 5 for debugging
+                )
             
             if not diff_content or diff_content.strip() == "":
-                logger.warning(f"PR #{pr_number} has no patch content in any files")
+                logger.warning(f"PR #{pr_number} has no code changes to analyze")
             
             return diff_content
             
@@ -266,10 +329,16 @@ class GitHubClient:
     
     async def find_review_comment(self, pr_number: int) -> Optional[int]:
         """
-        Find the code reviewer bot's comment on a PR.
+        Find the code reviewer bot's comment on a PR (for idempotent updates).
         
         Returns the comment ID if found, None otherwise.
-        This allows updating existing reviews instead of creating duplicates.
+        This allows updating existing reviews instead of creating duplicates,
+        keeping the PR conversation clean when developers push follow-up commits.
+        
+        Looks for markers:
+        - "Automated Code Review" (primary marker)
+        - "code-reviewer/analysis" (fallback for robustness)
+        - Comment from bot user (if available)
         
         Args:
             pr_number: GitHub PR number
@@ -277,14 +346,37 @@ class GitHubClient:
         Returns:
             Comment ID if found, None otherwise
         """
-        comments = await self.list_pr_comments(pr_number)
-        
-        # Look for a comment by the bot (you'd customize this marker)
-        for comment in comments:
-            if "Automated Code Review" in comment.get("body", ""):
-                return comment["id"]
-        
-        return None
+        try:
+            comments = await self.list_pr_comments(pr_number)
+            
+            # Markers that identify our bot's comments
+            bot_markers = [
+                "Automated Code Review",
+                "code-reviewer/analysis",
+                "## Code Review Analysis",
+                "## Review Results"
+            ]
+            
+            for comment in comments:
+                body = comment.get("body", "")
+                user = comment.get("user", {}).get("login", "")
+                
+                # Check if any bot marker is in the comment
+                for marker in bot_markers:
+                    if marker in body:
+                        from code_reviewer.utils.logger import get_logger
+                        get_logger().debug(
+                            f"Found existing bot comment for PR #{pr_number}",
+                            comment_id=comment["id"],
+                            marker=marker
+                        )
+                        return comment["id"]
+            
+            return None
+        except Exception as e:
+            from code_reviewer.utils.logger import get_logger
+            get_logger().error(f"Error finding review comment: {str(e)}")
+            return None
     
     async def create_status_check(
         self,

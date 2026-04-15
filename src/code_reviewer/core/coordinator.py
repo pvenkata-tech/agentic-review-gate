@@ -12,6 +12,7 @@ Uses asyncio.gather() for fan-out parallelization and proper exception handling.
 
 import asyncio
 import time
+import os
 from typing import List, Tuple, Optional
 from datetime import datetime
 
@@ -39,17 +40,26 @@ class ReviewCoordinator:
     across review cycles, preventing redundant notifications of the same issues.
     """
     
-    def __init__(self, cache_backend=None):
+    def __init__(self, cache_backend=None, semaphore_limit: int = 5):
         """Initialize the coordinator with all agents.
         
         Args:
             cache_backend: Optional cache backend for storing previous finding_ids
                           (e.g., Redis client for persistent state)
+            semaphore_limit: Max concurrent LLM requests (default: 5)
+                            Prevents rate limiting when multiple PRs reviewed simultaneously
         """
         self.logic_agent = LogicAgent()
         self.security_agent = SecurityGuardAgent()
         self.summarizer_agent = SummarizerAgent()
         self.cache_backend = cache_backend  # For future Redis integration
+        
+        # Rate limiting: Semaphore to limit concurrent LLM API calls
+        # Configured via AGENT_SEMAPHORE_LIMIT env var (default: 5)
+        self.semaphore = asyncio.Semaphore(
+            int(os.getenv('AGENT_SEMAPHORE_LIMIT', str(semaphore_limit)))
+        )
+        logger.debug(f"ReviewCoordinator initialized with semaphore_limit={semaphore_limit}")
     
     async def review_pr(self, state: ReviewState, previous_finding_ids=None) -> ReviewState:
         """
@@ -105,13 +115,30 @@ class ReviewCoordinator:
         
         return state
     
+    async def _execute_agent_with_limit(self, agent: BaseAgent, state: ReviewState) -> Tuple[List[AgentFinding], AgentMetadata]:
+        """
+        Execute agent with semaphore rate limiting.
+        
+        Prevents too many concurrent LLM API calls when multiple PRs are reviewed simultaneously.
+        Max concurrent requests = semaphore_limit (default 5).
+        
+        Args:
+            agent: Agent to execute
+            state: Current ReviewState
+            
+        Returns:
+            Tuple of (findings, metadata)
+        """
+        async with self.semaphore:
+            return await self._execute_agent_safe(agent, state)
+    
     async def _phase_a_analyze(self, state: ReviewState) -> None:
         """
         Phase A: Run Logic and Security agents in parallel using asyncio.gather().
         
         This is the core asyncio orchestration pattern:
         - Creates tasks for each agent
-        - Executes them concurrently
+        - Executes them concurrently (with semaphore rate limiting)
         - Gathers results and merges into shared state
         - Handles exceptions gracefully
         
@@ -129,10 +156,10 @@ class ReviewCoordinator:
             pr_number=state.pr_metadata.pr_number
         )
         
-        # Create tasks for concurrent execution
+        # Create tasks for concurrent execution with semaphore rate limiting
         tasks = []
         for agent in agents:
-            task = self._execute_agent_safe(agent, state)
+            task = self._execute_agent_with_limit(agent, state)
             tasks.append(task)
         
         # Execute all agents concurrently and gather results
