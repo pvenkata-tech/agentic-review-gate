@@ -60,14 +60,30 @@ class SecurityGuardAgent(BaseAgent):
             List of security findings
         """
         import time
+        from code_reviewer.utils.logger import get_logger
+        
+        logger = get_logger()
         start_time = time.perf_counter()
         
         findings: List[AgentFinding] = []
         
+        # Debug: log diff content
+        diff_content = state.pr_metadata.diff_content
+        logger.debug(f"[{self.agent_id}] Received diff_content: {len(diff_content)} chars")
+        if diff_content and len(diff_content) > 0:
+            logger.debug(f"[{self.agent_id}] First 200 chars:\n{diff_content[:200]}")
+        
         # Parse diff to get changed code
         diff_parser = DiffParser()
         file_diffs = diff_parser.parse(state.pr_metadata.diff_content)
+        logger.info(f"[{self.agent_id}] Parsed {len(file_diffs)} files from diff")
+        
+        # Debug: log hunk statistics
+        total_hunks = sum(len(f.hunks) for f in file_diffs)
+        logger.debug(f"[{self.agent_id}] Total hunks: {total_hunks}")
+        
         diff_text = self._format_diff_for_llm(file_diffs)
+        logger.debug(f"[{self.agent_id}] Formatted diff_text: {len(diff_text)} chars")
         
         # Always run pattern matching (fast and doesn't require API)
         findings.extend(await self._analyze_with_patterns(state, diff_text))

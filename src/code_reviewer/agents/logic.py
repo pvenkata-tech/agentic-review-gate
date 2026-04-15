@@ -55,14 +55,29 @@ class LogicAgent(BaseAgent):
         Returns:
             List of AgentFinding objects
         """
+        logger = self._get_logger()
         findings: List[AgentFinding] = []
+        
+        # Debug: log diff content
+        diff_content = state.pr_metadata.diff_content
+        logger.debug(f"[{self.agent_id}] Received diff_content: {len(diff_content)} chars")
+        if diff_content and len(diff_content) > 0:
+            logger.debug(f"[{self.agent_id}] First 200 chars:\n{diff_content[:200]}")
         
         # Parse the diff to extract only changed code
         diff_parser = DiffParser()
         file_diffs = diff_parser.parse(state.pr_metadata.diff_content)
+        logger.info(f"[{self.agent_id}] Parsed {len(file_diffs)} files from diff")
+        
+        # Debug: log hunk statistics
+        total_hunks = sum(len(f.hunks) for f in file_diffs)
+        logger.debug(f"[{self.agent_id}] Total hunks: {total_hunks}")
         
         # Prepare diff content for LLM
         diff_text = self._format_diff_for_llm(file_diffs)
+        logger.debug(f"[{self.agent_id}] Formatted diff_text: {len(diff_text)} chars")
+        if diff_text and len(diff_text) > 0:
+            logger.debug(f"[{self.agent_id}] First 300 chars of formatted diff:\n{diff_text[:300]}")
         
         if self.use_llm and self.llm_client and not isinstance(self.llm_client, MockLLMClient):
             # Use LLM for sophisticated analysis
