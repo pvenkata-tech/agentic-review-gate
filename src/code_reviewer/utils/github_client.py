@@ -134,6 +134,8 @@ class GitHubClient:
         """
         Fetch the full diff for a PR by reconstructing from files endpoint.
         
+        The files endpoint includes a 'patch' field with unified diff for each file.
+        
         Args:
             pr_number: GitHub PR number
             
@@ -147,47 +149,24 @@ class GitHubClient:
             # Get all files changed in the PR
             files = await self.get_pr_files(pr_number)
             
-            # Build unified diff from file changes
+            # Build unified diff from file patches
             diff_parts = []
             
             for file in files:
                 filename = file.get("filename", "unknown")
-                status = file.get("status", "modified")
-                additions = file.get("additions", 0)
-                deletions = file.get("deletions", 0)
-                
-                # Add file header
-                if status == "added":
-                    diff_parts.append(f"diff --git a/{filename} b/{filename}")
-                    diff_parts.append(f"new file mode 100644")
-                    diff_parts.append(f"index 0000000..1234567")
-                    diff_parts.append(f"--- /dev/null")
-                    diff_parts.append(f"+++ b/{filename}")
-                elif status == "deleted":
-                    diff_parts.append(f"diff --git a/{filename} b/{filename}")
-                    diff_parts.append(f"deleted file mode 100644")
-                    diff_parts.append(f"index 1234567..0000000")
-                    diff_parts.append(f"--- a/{filename}")
-                    diff_parts.append(f"+++ /dev/null")
-                else:
-                    diff_parts.append(f"diff --git a/{filename} b/{filename}")
-                    diff_parts.append(f"index 1234567..abcdefg 100644")
-                    diff_parts.append(f"--- a/{filename}")
-                    diff_parts.append(f"+++ b/{filename}")
-                
-                # Get the patch content if available
                 patch = file.get("patch", "")
+                
+                # Each file already has a patch with proper headers, just concatenate
                 if patch:
                     diff_parts.append(patch)
-                else:
-                    # Just include summary line
-                    diff_parts.append(f"@@ File: {filename} @@")
-                    diff_parts.append(f" Additions: {additions}, Deletions: {deletions}")
-                
-                diff_parts.append("")  # Blank line between files
+                    diff_parts.append("")  # Blank line between files
             
             diff_content = "\n".join(diff_parts)
-            logger.info(f"Successfully built PR #{pr_number} diff from files: {len(diff_content)} characters")
+            logger.info(f"Built PR #{pr_number} diff from {len(files)} files: {len(diff_content)} characters")
+            
+            if not diff_content or diff_content.strip() == "":
+                logger.warning(f"PR #{pr_number} has no patch content in any files")
+            
             return diff_content
             
         except Exception as e:

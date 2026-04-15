@@ -1,16 +1,32 @@
-﻿# Code Reviewer - Testing Guide
+﻿# Testing Guide - Agentic Review Gate
 
-## Overview
+Comprehensive guide for testing the agentic code review system, from unit tests to end-to-end webhook testing.
 
-This document describes how to test the agentic code review system with proper setup, execution, and validation procedures.
+## Quick Start
 
-## Testing Scenarios
+```bash
+# Run unit tests
+pytest tests/ -v
 
-### 1. Unit Tests
+# Test against a specific PR
+python tests/examples.py direct --pr-number 15
 
-**Directory**: `tests/`
+# Run full diagnostics
+python tests/diagnose.py
+```
 
-Run unit tests for core components:
+## Table of Contents
+
+1. [Unit Tests](#unit-tests)
+2. [Integration Tests](#integration-tests)
+3. [Direct API Testing](#direct-api-testing)
+4. [Webhook Testing](#webhook-testing)
+5. [Diagnostic Tools](#diagnostic-tools)
+6. [Troubleshooting](#troubleshooting)
+
+## Unit Tests
+
+### Running Tests
 
 ```bash
 # Run all tests
@@ -20,279 +36,325 @@ pytest tests/ -v
 pytest tests/test_core.py -v
 
 # Run with coverage
-pytest tests/ --cov=src/code_reviewer
+pytest tests/ --cov=src/code_reviewer --cov-report=html
 ```
 
-**Test Coverage**:
+### Test Files
+
+- **test_core.py**: ReviewState, agents, and coordinator unit tests
+- **test_agents_e2e.py**: End-to-end agent analysis workflows
+
+### Test Coverage
+
 - Diff parser validation and edge cases
 - Agent analysis logic and decision trees
 - Cache backend operations
 - GitHub client integration
+- Webhook signature validation
 
-### 2. Integration Tests
+## Integration Tests
 
-**Setup Required**:
+### Prerequisites
+
 1. GitHub token in `.env` (`GITHUB_TOKEN`)
-2. ngrok tunnel running on port 8000
-3. GitHub webhook configured to point to ngrok URL
+2. Valid GitHub repository access
+3. Development server running
+4. ngrok tunnel (for webhook testing)
 
-**Test Steps**:
+### Running Integration Tests
+
 ```bash
-# Start dev server
-./dev-server.ps1
+pytest tests/test_agents_e2e.py -v
+```
 
-# In another terminal, start ngrok
+## Direct API Testing
+
+### Test Against a Specific PR
+
+```bash
+python tests/examples.py direct --pr-number 15
+```
+
+This will:
+1. Fetch PR metadata from GitHub
+2. Extract file diffs
+3. Run agents (Logic + Security + Summarizer)
+4. Create GitHub status check
+5. Post findings comment
+6. Return results
+
+### Expected Output
+
+```
+✓ Review completed successfully!
+
+Results:
+  Total Findings: 3
+  Is Blocked: True
+  Status Check: Created
+
+Check PR: https://github.com/owner/repo/pull/15
+```
+
+## Webhook Testing
+
+### Webhook Architecture
+
+```
+GitHub Repository
+      ↓
+PR opened/updated
+      ↓
+GitHub sends POST to /webhook/github
+      ↓
+Server validates signature
+      ↓
+ReviewCoordinator starts async analysis
+      ↓
+Agents analyze code
+      ↓
+Comment posted to PR
+      ↓
+Status check updated
+```
+
+### Step-by-Step Setup
+
+#### 1. Generate Webhook Secret
+
+```python
+import secrets
+import base64
+secret = base64.b64encode(secrets.token_bytes(32)).decode()
+print(secret)
+```
+
+Add to `.env`:
+```env
+GITHUB_WEBHOOK_SECRET=<your_secret>
+```
+
+#### 2. Start Development Server
+
+```bash
+python -m uvicorn src.code_reviewer.main:app --host 127.0.0.1 --port 8000
+```
+
+#### 3. Create Public URL (for local testing)
+
+```bash
+# Using ngrok
 ngrok http 8000
-
-# Create a test PR
-git checkout -b test-feature
-echo "test code" > test.py
-git add test.py
-git commit -m "feat: Test feature"
-git push origin test-feature
-
-# Create PR on GitHub and monitor bot response
+# Copy HTTPS URL: https://abc-123-456.ngrok.io
 ```
 
-### 3. Webhook Testing
+#### 4. Configure GitHub Webhook
 
-**Prerequisites**:
-- GitHub webhook configured in repo settings
-- Dev server running on localhost:8000
-- ngrok tunnel active pointing to webhook endpoint
+1. Repository → Settings → Webhooks → Add webhook
+2. Fill in:
+   - **Payload URL**: `https://your-ngrok-url/webhook/github`
+   - **Content type**: `application/json`
+   - **Secret**: Your GITHUB_WEBHOOK_SECRET
+   - **Events**: Select "Pull requests" and "Pushes"
+   - **Active**: ✓ Checked
+3. Click "Add webhook"
 
-**Webhook Test Flow**:
+#### 5. Test the Webhook
 
-1. **Create Test PR**
-   - Push branch: `git push origin test-branch`
-   - Create PR on GitHub
-   - Observe GitHub webhook event in logs
-
-2. **Monitor Webhook Processing**
-   - Check dev server logs for: `"GitHub webhook accepted for PR review"`
-   - Verify diff retrieval: `"PR diff received: X characters"`
-   - Confirm parsing: `"DiffParser: Extracted X files"`
-   - Check agent analysis: `"Agent analysis complete"`
-
-3. **Validate Code Review Comment**
-   - Bot should post comment with findings
-   - Comment should contain:
-     - Code quality issues (from logic agent)
-     - Security concerns (from security agent)
-     - Summary of findings
-
-**Debug Webhook Issues**:
+Create a test PR or push to existing:
 
 ```bash
-# Check webhook configuration
-# Go to: https://github.com/[owner]/[repo]/settings/hooks
-# Verify: webhook URL, secret, and event types
-
-# View webhook deliveries
-# GitHub UI: Settings > Webhooks > Recent Deliveries
-# Check Response section for error messages
-
-# Monitor logs for common issues
-# - "Webhook signature validation failed" → Check GITHUB_WEBHOOK_SECRET
-# - "PR diff is empty!" → GitHub API returned no content
-# - "DiffParser: Extracted 0 files" → Diff format not recognized
+git checkout -b test-feature
+echo "# Test" > test.py
+git add test.py
+git commit -m "test: Add test code"
+git push origin test-feature
+# Create PR on GitHub
 ```
 
-### 4. Diff Extraction Testing
+Monitor webhook delivery:
+1. Settings → Webhooks → your webhook
+2. Scroll to "Recent Deliveries"
+3. Click any delivery to see request/response
+4. Status should be 200-299
 
-**Purpose**: Verify that code diffs are correctly extracted and parsed
+### Local Webhook Testing (Without ngrok)
 
-**Test Cases**:
+```bash
+python tests/webhook_test_client.py \
+  --url http://localhost:8000/webhook/github \
+  --pr-number 15
+```
 
-1. **Simple File Changes**
-   - Add a Python file with actual code
-   - Verify bot identifies code quality issues
-   - Confirm diff shows in analysis logs
+This simulates a GitHub webhook without needing a public URL.
 
-2. **Multiple Files**
-   - Modify 3+ files in single commit
-   - Verify all files are parsed and analyzed
-   - Check hunk extraction is correct
+## Diagnostic Tools
 
-3. **Edge Cases**
-   - Binary files (should be skipped)
-   - Whitespace-only changes (should be noted)
-   - Large diffs (>10MB - may be truncated)
-   - Renamed files (should parse correctly)
+### Run All Diagnostics
 
-**Validation Checklist**:
-- [ ] Diff received by GitHub API
-- [ ] Diff parsed into FileDiff objects
-- [ ] Hunks extracted correctly
-- [ ] Agents receive formatted diff_text
-- [ ] LLM analysis includes code snippets
-- [ ] GitHub comment shows actual findings
+```bash
+python tests/diagnose.py
+```
 
-## Debugging Guide
+Checks:
+- GitHub API authentication ✓
+- Server health and connectivity ✓
+- PR metadata retrieval ✓
+- File diff fetching ✓
+- Status check creation ✓
+- Recently merged PRs ✓
+
+### Check Specific PR
+
+```bash
+python tests/diagnose.py --pr-number 15
+```
+
+Additionally checks:
+- PR files and patches
+- Current status checks on PR
+- PR metadata consistency
+
+### Run Specific Diagnostic
+
+```bash
+python tests/diagnose.py --check token      # GitHub auth
+python tests/diagnose.py --check server     # Server health
+python tests/diagnose.py --check pr --pr-number 15  # PR data
+python tests/diagnose.py --check status --pr-number 15  # Status checks
+python tests/diagnose.py --check merged     # Merged PRs
+```
+
+## Troubleshooting
+
+### Webhook Not Triggering
+
+**Symptom**: Status check stuck in "pending" state
+
+**Diagnosis**:
+```bash
+python tests/diagnose.py
+# Check "Server Health" and "GitHub Token" pass
+```
+
+**Solutions**:
+1. Verify GitHub webhook configuration (Settings → Webhooks)
+2. Update webhook URL if using ngrok (new URL on restart)
+3. Check webhook "Recent Deliveries" for error responses
+4. Verify GITHUB_WEBHOOK_SECRET matches `.env` and GitHub settings
+
+### No Comments Posted
+
+**Symptom**: Review runs but no comment on PR
+
+**Diagnosis**:
+```bash
+python tests/diagnose.py --pr-number 15
+```
+
+**Solutions**:
+1. Check server logs for background task errors
+2. Verify GitHub token has `repo` scope
+3. Ensure PR hasn't been merged
+4. Check comment count limit hasn't been exceeded
+
+### Diff Not Parsing
+
+**Symptom**: Agents report "0 files analyzed"
+
+**Diagnosis**:
+```bash
+python tests/diagnose.py --pr-number 15 --check pr
+```
+
+**Solutions**:
+1. Verify PR has actual file changes
+2. Check if files are too large (>1MB each)
+3. Confirm GitHub API returns patch content
+
+### ngrok URL Expired
+
+**Symptom**: Webhook returns 404
+
+**Solution**:
+- ngrok free tier generates new URL on restart
+- Update GitHub webhook with new URL
+- Use paid ngrok account for permanent URL
+- Deploy to server for production testing
+
+## Performance Metrics
+
+Expected performance for typical PR:
+- Agent analysis: 5-30 seconds
+- Status check creation: <1 second
+- Comment posting: <1 second
+- **Total**: 10-40 seconds
+
+If analysis takes >60 seconds:
+1. Check LLM response times (rate limiting?)
+2. Check network connectivity to GitHub API
+3. Review diff size (>10k lines?)
+4. Check agent timeouts in config
+
+## Testing Checklist
+
+### Setup Verification
+- [ ] GitHub token in `.env`
+- [ ] Server starts without errors
+- [ ] Can access http://localhost:8000/docs
+- [ ] Can run diagnostics successfully
+
+### Direct API Testing
+- [ ] `python tests/examples.py direct --pr-number <N>` works
+- [ ] Review completes within 120 seconds
+- [ ] Status check created on PR
+- [ ] Comment posted with findings
+
+### Webhook Testing
+- [ ] Webhook secret configured
+- [ ] ngrok tunnel active (if local testing)
+- [ ] GitHub webhook configured
+- [ ] Webhook shows successful deliveries (200 status)
+- [ ] PR comment appears after webhook triggers
+
+### Diagnostic Tests
+- [ ] All diagnostics pass: `python tests/diagnose.py`
+- [ ] Token, server, API connectivity verified
+- [ ] PR metadata retrieval working
+- [ ] Status checks and comments functional
+
+## Debugging
 
 ### Enable Debug Logging
 
-Set environment variable:
 ```bash
-export LOG_LEVEL=DEBUG
-# or in .env
+# Set in .env or environment
 LOG_LEVEL=DEBUG
 ```
 
-### Key Log Messages to Watch
+### Key Log Patterns
 
+Successful flow:
 ```
-# Successful flow
-[github_client] Fetching PR diff from: https://api.github.com/...
+[github_client] Fetching PR #15
 [github_client] Successfully fetched PR diff: 5024 characters
-[diff_parser] Processing 42 lines from diff
 [diff_parser] Extracted 3 files from diff
-[logic_agent] Parsed 3 files from diff
-[security_agent] Formatted diff_text: 2048 chars
-[main] Completed PR review #7
+[logic_agent] Analyzing 3 files
+[security_agent] Scanning for security issues
+[main] Completed PR review #15
+```
 
-# Problem indicators
+Problem indicators:
+```
 [github_client] PR diff is empty!
 [diff_parser] Diff does not start with 'diff --git'
-[logic_agent] Received diff_content: 0 chars (should be > 0)
+[logic_agent] Received 0 chars (should be > 0)
 [agents] Unable to analyze code changes
 ```
 
-### Troubleshooting Steps
+## Next Steps
 
-**Problem**: Webhook not received
-1. Verify ngrok is running: `ngrok http 8000`
-2. Check GitHub webhook settings for URL and secret
-3. Review webhook delivery logs on GitHub
-4. Ensure firewall allows incoming connections
-
-**Problem**: Diff is empty
-1. Check GitHub token has repo access
-2. Verify Accept header in GitHub client
-3. Review GitHub API response in logs
-4. Test manually: `curl -H "Authorization: token $TOKEN" https://api.github.com/.../pulls/1 -H "Accept: application/vnd.github.diff"`
-
-**Problem**: Agents not analyzing
-1. Verify diff_content is non-empty in logs
-2. Check if LLM_LOGIC/LLM_SECURITY are enabled
-3. Review LLM client initialization
-4. Check for API rate limiting errors
-
-## Agent Architecture
-
-### Design Patterns
-
-The system uses multiple design patterns for extensibility and maintainability:
-
-**1. Strategy Pattern (Agents)**
-- Each agent implements the `AnalysisAgent` interface from `core/interfaces.py`
-- Different analysis strategies: `LogicAgent`, `SecurityGuardAgent`
-- New agents can be added without modifying existing code (Open/Closed Principle)
-
-**2. Blackboard Pattern (State)**
-- `ReviewState` acts as a shared blackboard
-- Agents deposit findings without direct inter-agent communication
-- `ReviewCoordinator` synthesizes findings at the end
-- Reduces coupling and allows parallel agent execution
-
-**3. Dependency Inversion Principle**
-- High-level modules depend on abstractions (`core/interfaces.py`)
-- Low-level modules (`utils/`) implement the abstractions
-- Makes system testable with mock implementations
-
-### Agent Implementation
-
-All agents follow this structure:
-
-1. **Inherit from `BaseAgent`** (ABC - Abstract Base Class)
-   ```python
-   from agents.base import BaseAgent
-   from core.state import ReviewState, AgentFinding
-   
-   class LogicAgent(BaseAgent):
-       async def analyze(self, state: ReviewState) -> List[AgentFinding]:
-           # Analysis implementation
-           return findings
-   ```
-
-2. **Follow the interface contract**
-   - Accept `ReviewState` parameter (blackboard snapshot)
-   - Return `List[AgentFinding]` with metadata
-   - Don't modify state directly
-   - Include execution timing and metrics
-
-3. **Use consistent severity levels**
-   ```python
-   from core.state import Severity
-   
-   finding = AgentFinding(
-       agent_id="logic",
-       category="Design Pattern Violation",
-       message="Single Responsibility Principle violated",
-       severity=Severity.WARNING,  # CRITICAL, WARNING, INFO
-       file_path="src/module.py",
-       line_number=42
-   )
-   ```
-
-### Adding New Agents
-
-To extend with a new agent (e.g., `PerformanceAgent`):
-
-1. Create `src/code_reviewer/agents/performance.py`
-2. Inherit from `BaseAgent`
-3. Implement `analyze()` method
-4. Register in `ReviewCoordinator`
-
-```python
-# agents/performance.py
-class PerformanceAgent(BaseAgent):
-    async def analyze(self, state: ReviewState) -> List[AgentFinding]:
-        findings = []
-        # Analyze for performance antipatterns
-        return findings
-
-# core/coordinator.py - add to agents list
-agents = [
-    LogicAgent(llm),
-    SecurityGuardAgent(llm),
-    PerformanceAgent(),  # New agent
-]
-```
-
-### Testing Agents in Isolation
-
-**Unit Test Template**:
-```python
-import pytest
-from core.state import ReviewState, Severity
-from agents.logic import LogicAgent
-
-@pytest.mark.asyncio
-async def test_logic_agent_detects_solid_violation():
-    # Use rule-based mode (no LLM) for deterministic testing
-    agent = LogicAgent(use_llm=False)
-    state = ReviewState(
-        pr_number=1,
-        title="Test PR",
-        diff_text="def violating_class():\n    # Too many responsibilities",
-    )
-    
-    findings = await agent.analyze(state)
-    
-    assert len(findings) > 0
-    assert any(f.severity == Severity.WARNING for f in findings)
-```
-
-## Performance Testing
-
-**Large PR Handling**:
-- Test with 50+ file changes
-- Verify diff doesn't exceed token limits
-- Monitor agent execution time
-- Check comment posting doesn't timeout
-
-**Concurrent Webhooks**:
-- Multiple PRs triggering simultaneously
-- Verify background tasks don't interfere
-- Check cache doesn't cause race conditions
+1. [Configure GitHub Integration](GITHUB_INTEGRATION.md)
+2. [Set up LLM Provider](LLM_SETUP.md)
+3. [Deploy to Production](DEPLOYMENT.md)
+4. [Monitor and Troubleshoot](DEPLOYMENT.md#monitoring)
