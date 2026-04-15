@@ -341,7 +341,7 @@ Provide your analysis in JSON format."""
 prompt = """You are a code reviewer. Analyze code and return findings in this format:
 
 EXAMPLE:
-Code: secret = "hardcoded_value"
+Code: config_value = "<example_config_placeholder>"
 Finding: {"type": "Hardcoded Secret", "suggestion": "Move to environment variable"}
 
 Now analyze this code:
@@ -447,13 +447,13 @@ async def _phase_a_analyze(self, state: ReviewState):
 
 ```env
 # Anthropic
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=<your_anthropic_api_key>
 
 # OpenAI
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=<your_openai_api_key>
 
 # Other
-GITHUB_TOKEN=ghp_...
+GITHUB_TOKEN=<your_github_token>
 LOG_LEVEL=INFO
 
 # Feature flags

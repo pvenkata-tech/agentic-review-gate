@@ -96,10 +96,13 @@ The token needs these scopes:
 Check: https://github.com/settings/personal-access-tokens
 
 ### Environment Variables
-Verify in your `.env` file:
+Never hardcode tokens, API keys, or webhook secrets in docs, code, or command history. Store them in environment variables or a secret manager, and rotate them immediately if they are ever exposed.
+
+Verify in your local `.env` file:
 ```env
-GITHUB_TOKEN=ghp_your_github_personal_access_token_here
-GITHUB_WEBHOOK_SECRET=your_webhook_secret_from_step_1
+# Use placeholders in docs only; never commit real secrets.
+GITHUB_TOKEN=<your_github_token_from_env_or_secret_manager>
+GITHUB_WEBHOOK_SECRET=<your_webhook_secret_from_step_1>
 ```
 
 ## Testing Webhook Locally
@@ -110,9 +113,11 @@ Use the webhook test client to simulate GitHub:
 # Make sure server is running first (Terminal 1)
 
 # Terminal 3: Test webhook locally
+# PowerShell example: load secret from environment, not inline
+$secret = $env:GITHUB_WEBHOOK_SECRET
 python tests/webhook_test_client.py \
   --url http://localhost:8000/webhook/github \
-  --secret "YOUR_WEBHOOK_SECRET_FROM_.ENV" \
+  --secret "$secret" \
   --pr-number 12
 ```
 
