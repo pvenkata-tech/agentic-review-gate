@@ -246,7 +246,7 @@ class WebhookHandler:
             - payload: Parsed payload if valid, None otherwise
             - error_message: Error description if validation failed
         """
-        # Step 1: Validate signature
+        # Step 1: Validate signature (skip if no secret configured - dev mode)
         if self.secret:
             try:
                 if not self.validator.verify_signature(raw_body, signature_header, self.secret):
@@ -254,8 +254,8 @@ class WebhookHandler:
             except Exception as e:
                 return False, None, f"Webhook signature validation failed: {str(e)}"
         else:
-            # No secret configured - warn but allow (dev mode)
-            return False, None, "Warning: webhook secret not configured, signature validation skipped"
+            # No secret configured - allow in dev mode (warn and continue)
+            pass
         
         # Step 2: Check event type
         if event_type != GitHubEventType.PULL_REQUEST:

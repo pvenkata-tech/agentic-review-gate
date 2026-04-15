@@ -12,6 +12,16 @@ import json
 from pathlib import Path
 from datetime import datetime
 import os
+import hashlib
+
+
+def compute_cache_key(pr_number: int, file_path: str = None) -> str:
+    """Compute a unique cache key for storing PR analysis results."""
+    if file_path:
+        key_data = f"pr_{pr_number}_file_{file_path}"
+    else:
+        key_data = f"pr_{pr_number}"
+    return hashlib.md5(key_data.encode()).hexdigest()
 
 
 class CacheBackend(ABC):

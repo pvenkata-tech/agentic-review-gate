@@ -1,17 +1,27 @@
 """
 Security Guard Agent: Scans for secrets, PII, and OWASP vulnerabilities.
 
+Design Pattern: Strategy pattern
+- Implements the AnalysisAgent interface from core/interfaces.py
+- Inherits from BaseAgent (abstract base class)
+- Can be added/removed without changing ReviewCoordinator code (Open/Closed Principle)
+
 This agent focuses on:
-- Hardcoded API keys and credentials
+- Hardcoded API keys, passwords, and credentials
 - Personally Identifiable Information (PII) leaks
 - Common OWASP top 10 vulnerabilities
 - SQL injection vulnerabilities
 - XSS vulnerabilities
 - Insecure cryptography usage
+- Weak authentication patterns
 
 Can operate in two modes:
 1. LLM-powered: Uses Claude or GPT-4 with specialized security prompts
 2. Rule-based: Uses regex patterns for offline detection
+
+Example:
+    agent = SecurityGuardAgent(llm_client=llm, use_llm=True)
+    findings = await agent.analyze(state)
 """
 
 import re
@@ -60,14 +70,30 @@ class SecurityGuardAgent(BaseAgent):
             List of security findings
         """
         import time
+        from code_reviewer.utils.logger import get_logger
+        
+        logger = get_logger()
         start_time = time.perf_counter()
         
         findings: List[AgentFinding] = []
         
+        # Debug: log diff content
+        diff_content = state.pr_metadata.diff_content
+        logger.debug(f"[{self.agent_id}] Received diff_content: {len(diff_content)} chars")
+        if diff_content and len(diff_content) > 0:
+            logger.debug(f"[{self.agent_id}] First 200 chars:\n{diff_content[:200]}")
+        
         # Parse diff to get changed code
         diff_parser = DiffParser()
         file_diffs = diff_parser.parse(state.pr_metadata.diff_content)
+        logger.info(f"[{self.agent_id}] Parsed {len(file_diffs)} files from diff")
+        
+        # Debug: log hunk statistics
+        total_hunks = sum(len(f.hunks) for f in file_diffs)
+        logger.debug(f"[{self.agent_id}] Total hunks: {total_hunks}")
+        
         diff_text = self._format_diff_for_llm(file_diffs)
+        logger.debug(f"[{self.agent_id}] Formatted diff_text: {len(diff_text)} chars")
         
         # Always run pattern matching (fast and doesn't require API)
         findings.extend(await self._analyze_with_patterns(state, diff_text))
@@ -169,15 +195,58 @@ class SecurityGuardAgent(BaseAgent):
     
     def _format_diff_for_llm(self, file_diffs: List) -> str:
         """Format parsed diff for inclusion in LLM prompt."""
-        result = []
-        for file_diff in file_diffs[:10]:  # Limit to first 10 files
-            result.append(f"\n### {file_diff.file_path}")
-            
-            # Include first 500 chars of diff
-            content_preview = "\n".join(file_diff.lines[:20])
-            result.append(f"```\n{content_preview[:500]}...\n```")
+        if not file_diffs:
+            return "No files changed in this PR."
         
-        return "\n".join(result)
+        result = []
+        result.append(f"## Code Changes ({len(file_diffs)} files modified)\n")
+        
+        for file_diff in file_diffs[:15]:  # Limit to first 15 files
+            result.append(f"\n### File: `{file_diff.file_path}`")
+            
+            # Add file status
+            if file_diff.is_added:
+                result.append("**Status**: NEW FILE")
+            elif file_diff.is_deleted:
+                result.append("**Status**: DELETED")
+            elif file_diff.is_renamed:
+                result.append(f"**Status**: RENAMED (from `{file_diff.old_file}`)")
+            else:
+                result.append("**Status**: MODIFIED")
+            
+            if file_diff.is_binary:
+                result.append("(Binary file - not analyzed)")
+                continue
+            
+            # If no hunks, indicate that
+            if not file_diff.hunks:
+                result.append("(No code changes in diff, or file only has whitespace changes)")
+                continue
+            
+            # Collect all lines from all hunks with better context
+            for hunk_idx, hunk in enumerate(file_diff.hunks):
+                result.append(f"\n**Hunk {hunk_idx + 1}** (lines {hunk.new_start}-{hunk.new_start + hunk.new_count}):")
+                
+                # Include the actual lines from the hunk
+                if hunk.lines:
+                    # Format the diff lines with better readability
+                    formatted_lines = []
+                    for line in hunk.lines[:40]:  # Limit lines per hunk
+                        if line.startswith('+') and not line.startswith('+++'):
+                            formatted_lines.append(f"➕ {line}")
+                        elif line.startswith('-') and not line.startswith('---'):
+                            formatted_lines.append(f"➖ {line}")
+                        else:
+                            formatted_lines.append(f"  {line}")
+                    
+                    result.append("```diff\n" + "\n".join(formatted_lines) + "\n```")
+                
+                # Also include statistics about the hunk
+                if hunk.added_lines or hunk.removed_lines:
+                    result.append(f"- Lines added: {len(hunk.added_lines)}")
+                    result.append(f"- Lines removed: {len(hunk.removed_lines)}")
+        
+        return "\n".join(result) if result else "No analyzable changes in this PR."
     
     def _parse_llm_findings(
         self,

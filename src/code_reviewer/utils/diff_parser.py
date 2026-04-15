@@ -49,9 +49,26 @@ class DiffParser:
         Returns:
             List of FileDiff objects
         """
+        from code_reviewer.utils.logger import get_logger
+        logger = get_logger()
+        
         files = []
+        
+        # Validate input
+        if not diff_content or len(diff_content.strip()) == 0:
+            logger.warning("DiffParser.parse(): Received empty diff content")
+            return files
+        
+        # Check if this looks like a valid diff
+        if not diff_content.startswith('diff --git') and not diff_content.startswith('==='):
+            logger.warning(f"DiffParser.parse(): Diff does not start with 'diff --git'. First 100 chars: {diff_content[:100]}")
+            # Still try to parse in case it's a partial diff
+        
         lines = diff_content.split('\n')
+        logger.debug(f"DiffParser.parse(): Processing {len(lines)} lines from diff")
+        
         i = 0
+        file_count = 0
         
         while i < len(lines):
             # Look for diff header
@@ -59,6 +76,8 @@ class DiffParser:
                 file_diff = DiffParser._parse_file_diff(lines, i)
                 if file_diff:
                     files.append(file_diff)
+                    file_count += 1
+                    logger.debug(f"  File {file_count}: {file_diff.file_path} ({len(file_diff.hunks)} hunks)")
                     # Move index forward by the number of lines consumed
                     i += DiffParser._count_consumed_lines(lines, i)
                 else:
@@ -66,6 +85,7 @@ class DiffParser:
             else:
                 i += 1
         
+        logger.info(f"DiffParser.parse(): Extracted {file_count} files from diff")
         return files
     
     @staticmethod
