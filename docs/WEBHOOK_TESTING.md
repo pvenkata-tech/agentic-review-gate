@@ -43,9 +43,9 @@ choco install ngrok  # if using Chocolatey
 # Terminal 1: Start the review service
 cd agentic-review-gate
 
-# Configure environment
-export GITHUB_WEBHOOK_SECRET=test_webhook_secret_123
-export GITHUB_TOKEN=ghp_your_github_token
+# Configure environment (use placeholders only in docs)
+export GITHUB_WEBHOOK_SECRET=<your_webhook_secret_from_env_or_secret_manager>
+export GITHUB_TOKEN=<your_github_token_from_env_or_secret_manager>
 
 # Start server
 python -m uvicorn src.code_reviewer.main:app --host 0.0.0.0 --port 8000 --reload
@@ -69,7 +69,7 @@ ngrok http 8000
 3. Configure:
    - **Payload URL**: `https://1234-56-78-90-12.ngrok.io/webhook/github`
    - **Content type**: `application/json`
-   - **Secret**: `test_webhook_secret_123`
+   - **Secret**: value from `GITHUB_WEBHOOK_SECRET` (do not paste real secrets in docs)
    - **Events**: Select "Pull requests"
    - **Active**: ✓ (checked)
 
@@ -179,8 +179,9 @@ Create a PR that intentionally includes a security issue:
 git checkout -b test/security-issue
 cat > test_secrets.py << 'EOF'
 # This will trigger security findings
-API_KEY = "sk-1234567890abcdefghij"
-DATABASE_PASSWORD = "hardcoded_password_123"
+API_KEY = EXAMPLE_API_KEY_PLACEHOLDER
+DATABASE_PASSWORD = EXAMPLE_DATABASE_PASSWORD_PLACEHOLDER
+
 
 def login(user, pass):
     # SQL injection vulnerable query
@@ -250,7 +251,7 @@ git push origin test/code-quality
 
 # Set variables
 WEBHOOK_URL="http://localhost:8000/webhook/github"
-SECRET="test_webhook_secret_123"
+SECRET=${GITHUB_WEBHOOK_SECRET}
 PAYLOAD='{"action":"opened","pull_request":{"number":42},"repository":{"name":"test"}}'
 
 # Calculate HMAC signature
@@ -271,7 +272,7 @@ See `tests/webhook_test_client.py` for a complete webhook simulation script.
 ```bash
 python tests/webhook_test_client.py \
   --url http://localhost:8000/webhook/github \
-  --secret test_webhook_secret_123 \
+  --secret "$GITHUB_WEBHOOK_SECRET" \
   --event pull_request \
   --action opened \
   --pr-number 42
@@ -302,7 +303,7 @@ python -m uvicorn src.code_reviewer.main:app --port 8000
 pip install anthropic
 
 # Set API key
-export ANTHROPIC_API_KEY="sk-ant-your-key-here"
+export ANTHROPIC_API_KEY=<your_anthropic_api_key>
 
 # Start server - will auto-detect and use Claude
 python -m uvicorn src.code_reviewer.main:app --port 8000
@@ -318,7 +319,7 @@ python -m uvicorn src.code_reviewer.main:app --port 8000
 pip install openai
 
 # Set API key
-export OPENAI_API_KEY="sk-your-openai-key"
+export OPENAI_API_KEY=<your_openai_api_key>
 
 # Start server - will auto-detect and use GPT-4
 python -m uvicorn src.code_reviewer.main:app --port 8000
@@ -332,7 +333,7 @@ python -m uvicorn src.code_reviewer.main:app --port 8000
 Test that the system gracefully handles LLM failures:
 
 1. Start with valid LLM credentials
-2. Change API key to invalid: `export ANTHROPIC_API_KEY="sk-invalid"`
+2. Change API key to invalid: `export ANTHROPIC_API_KEY=<invalid_api_key_for_testing>`
 3. Send webhook
 4. Observe:
    - LLM call fails with 401 Unauthorized

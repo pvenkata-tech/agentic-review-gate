@@ -1,7 +1,7 @@
 """
 FastAPI Entrypoint: Main service for the code reviewer system.
 
-Provides REST endpoints for:
+Provides REST endpoints:
 - Triggering PR reviews
 - Receiving GitHub webhook events
 - Status and health checks
@@ -14,6 +14,10 @@ from pydantic import BaseModel
 from typing import Optional
 import asyncio
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from code_reviewer.core.state import ReviewState, PRMetadata
 from code_reviewer.core.coordinator import ReviewCoordinator
@@ -136,6 +140,10 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
         pr_info = await github_client.get_pr_info(request.pr_number)
         pr_diff = await github_client.get_pr_diff(request.pr_number)
         
+        # Fetch the list of files changed (separate endpoint)
+        pr_files = await github_client.get_pr_files(request.pr_number)
+        files_changed = [f["filename"] for f in pr_files]
+        
         # Extract data for ReviewState
         pr_metadata = PRMetadata(
             pr_number=request.pr_number,
@@ -144,7 +152,7 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
             branch=pr_info["head"]["ref"],
             base_branch=pr_info["base"]["ref"],
             diff_content=pr_diff,
-            files_changed=[f["filename"] for f in pr_info.get("files", [])],
+            files_changed=files_changed,
             additions=pr_info.get("additions", 0),
             deletions=pr_info.get("deletions", 0),
         )
@@ -179,11 +187,33 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
         # Get stats
         stats = coordinator.get_review_stats(review_state)
         
+        # Create GitHub Status Check to enforce merge blocking (synchronous - critical for merge blocking)
+        commit_sha = pr_info["head"]["sha"]
+        status_state = "failure" if review_state.is_blocked else "success"
+        status_description = f"{'❌ Changes Requested' if review_state.is_blocked else '✅ Approved'} - {stats['total_findings']} findings"
+        
+        # Truncate description if needed (GitHub limit is 140 chars)
+        if len(status_description) > 140:
+            status_description = status_description[:137] + "..."
+        
+        try:
+            await github_client.create_status_check(
+                commit_sha=commit_sha,
+                state=status_state,
+                description=status_description,
+                context="code-reviewer/analysis",
+            )
+            logger.info(f"Created status check: {status_state} on {commit_sha[:7]}")
+        except Exception as e:
+            logger.error(f"Failed to create status check: {str(e)}")
+        
         # Post comment to GitHub (background task)
         if review_state.final_summary:
             background_tasks.add_task(
                 _post_review_comment,
-                github_client,
+                request.github_token,
+                request.owner,
+                request.repo,
                 request.pr_number,
                 review_state.final_summary,
             )
@@ -332,8 +362,55 @@ async def get_review_stats(pr_number: int):
     )
 
 
+async def _create_status_check(
+    github_token: str,
+    owner: str,
+    repo: str,
+    commit_sha: str,
+    state: str,
+    description: str,
+) -> None:
+    """
+    Create a GitHub Status Check on commit (background task).
+    
+    This enforces merge blocking when critical issues are found.
+    
+    Args:
+        github_token: GitHub API token
+        owner: Repository owner
+        repo: Repository name
+        commit_sha: Git commit SHA
+        state: Status state (success, failure)
+        description: Status description
+    """
+    try:
+        # Create GitHub client
+        github_config = GitHubConfig(
+            token=github_token,
+            owner=owner,
+            repo=repo,
+        )
+        github_client = GitHubClient(github_config)
+        
+        await github_client.create_status_check(
+            commit_sha=commit_sha,
+            state=state,
+            description=description,
+            context="code-reviewer/analysis",
+        )
+        logger.info(
+            f"Created status check: {state}",
+            commit_sha=commit_sha[:7],
+            description=description,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create status check: {str(e)}")
+
+
 async def _post_review_comment(
-    github_client: GitHubClient,
+    github_token: str,
+    owner: str,
+    repo: str,
     pr_number: int,
     comment_body: str,
 ) -> None:
@@ -341,11 +418,21 @@ async def _post_review_comment(
     Post review comment to GitHub (background task).
     
     Args:
-        github_client: GitHub client instance
+        github_token: GitHub API token
+        owner: Repository owner
+        repo: Repository name
         pr_number: PR number
         comment_body: Comment body (Markdown)
     """
     try:
+        # Create GitHub client
+        github_config = GitHubConfig(
+            token=github_token,
+            owner=owner,
+            repo=repo,
+        )
+        github_client = GitHubClient(github_config)
+        
         # Check if bot already commented
         existing_comment_id = await github_client.find_review_comment(pr_number)
         

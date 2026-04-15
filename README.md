@@ -2,6 +2,8 @@
 
 A production-grade multi-agent PR review system using the **Shared State (Blackboard) Pattern** to avoid "message pass-through" fatigue. Each specialized agent analyzes a PR independently, deposits findings on a shared state, and a final Summarizer synthesizes findings into a professional GitHub comment.
 
+![Agentic review workflow animation](docs/assets/agentic-review-workflow.gif)
+
 ## Architecture Overview
 
 ### The Blackboard Pattern

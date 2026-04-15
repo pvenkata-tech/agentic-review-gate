@@ -10,8 +10,8 @@ Complete guide to setting up and using Large Language Models with the Code Revie
 # Install
 pip install anthropic
 
-# Set API key
-export ANTHROPIC_API_KEY="sk-ant-your-key"
+# Set API key (use your actual key from a secret manager/env store)
+export ANTHROPIC_API_KEY=<your_anthropic_api_key>
 
 # Start server
 python -m uvicorn src.code_reviewer.main:app --port 8000
@@ -23,8 +23,8 @@ python -m uvicorn src.code_reviewer.main:app --port 8000
 # Install
 pip install openai
 
-# Set API key
-export OPENAI_API_KEY="sk-your-key"
+# Set API key (use your actual key from a secret manager/env store)
+export OPENAI_API_KEY=<your_openai_api_key>
 
 # Start server
 python -m uvicorn src.code_reviewer.main:app --port 8000
@@ -68,14 +68,14 @@ python -m uvicorn src.code_reviewer.main:app --port 8000
 
 **Linux/macOS**:
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY=<your_anthropic_api_key>
+export OPENAI_API_KEY=<your_openai_api_key>
 ```
 
 **Windows PowerShell**:
 ```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
-$env:OPENAI_API_KEY = "sk-..."
+$env:ANTHROPIC_API_KEY = <your_anthropic_api_key>
+$env:OPENAI_API_KEY = <your_openai_api_key>
 ```
 
 #### Option B: .env File
@@ -83,10 +83,10 @@ $env:OPENAI_API_KEY = "sk-..."
 Create `.env` in project root:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GITHUB_TOKEN=ghp_...
-GITHUB_WEBHOOK_SECRET=my_secret_123
+ANTHROPIC_API_KEY=<your_anthropic_api_key>
+OPENAI_API_KEY=<your_openai_api_key>
+GITHUB_TOKEN=<your_github_token>
+GITHUB_WEBHOOK_SECRET=<your_webhook_secret>
 ```
 
 Then load in Python:
@@ -100,7 +100,7 @@ load_dotenv()
 ```python
 from code_reviewer.llm import ClaudeClient
 
-client = ClaudeClient(api_key="sk-ant-...")
+client = ClaudeClient(api_key=ANTHROPIC_API_KEY_FROM_ENV)
 agent = LogicAgent(llm_client=client)
 ```
 
@@ -294,12 +294,12 @@ mini = GPT4Client(model="gpt-4-turbo-preview")
 
 ```bash
 # At least one API key
-export ANTHROPIC_API_KEY="sk-ant-..."    # OR
-export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY=<your_anthropic_api_key>    # OR
+export OPENAI_API_KEY=<your_openai_api_key>
 
 # GitHub integration
-export GITHUB_TOKEN="ghp_..."
-export GITHUB_WEBHOOK_SECRET="your_secret"
+export GITHUB_TOKEN=<your_github_token>
+export GITHUB_WEBHOOK_SECRET=<your_webhook_secret>
 
 # Optional
 export LOG_LEVEL="INFO"

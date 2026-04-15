@@ -59,8 +59,8 @@ Save this secret! You'll need it for both GitHub and your environment variables.
 Add the secret to your `.env` file or system environment variables:
 
 ```env
-GITHUB_TOKEN=ghp_your_personal_access_token
-GITHUB_WEBHOOK_SECRET=your_generated_secret
+GITHUB_TOKEN=<your_github_token>
+GITHUB_WEBHOOK_SECRET=<your_generated_secret>
 ```
 
 ### Step 3: Configure GitHub Webhook
@@ -164,7 +164,7 @@ $payload = @{
 } | ConvertTo-Json
 
 # Generate signature
-$secret = "your_webhook_secret"
+$secret = $env:GITHUB_WEBHOOK_SECRET
 $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
 $hmac = New-Object System.Security.Cryptography.HMACSHA256
 $hmac.Key = [System.Text.Encoding]::UTF8.GetBytes($secret)
@@ -186,7 +186,7 @@ Invoke-WebRequest -Uri "http://localhost:8000/webhook/github" `
 **Bash/curl:**
 
 ```bash
-SECRET="your_webhook_secret"
+SECRET=${GITHUB_WEBHOOK_SECRET}
 PAYLOAD='{"action":"opened","pull_request":{"number":1,...}}'
 
 SIGNATURE="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"

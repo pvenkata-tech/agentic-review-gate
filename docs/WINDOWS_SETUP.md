@@ -79,19 +79,19 @@ To enable GitHub webhook integration, set these environment variables:
 **Option A: Using PowerShell**
 
 ```powershell
-$env:GITHUB_TOKEN = "ghp_your_token_here"
+$env:GITHUB_TOKEN = <your_github_token>
 $env:GITHUB_OWNER = "your-org"
 $env:GITHUB_REPO = "your-repo"
-$env:GITHUB_WEBHOOK_SECRET = "your_webhook_secret"
+$env:GITHUB_WEBHOOK_SECRET = <your_webhook_secret>
 ```
 
 **Option B: Using Command Prompt**
 
 ```cmd
-set GITHUB_TOKEN=ghp_your_token_here
+set GITHUB_TOKEN=<your_github_token>
 set GITHUB_OWNER=your-org
 set GITHUB_REPO=your-repo
-set GITHUB_WEBHOOK_SECRET=your_webhook_secret
+set GITHUB_WEBHOOK_SECRET=<your_webhook_secret>
 ```
 
 **Option C: Using .env file** (Recommended)
@@ -100,10 +100,10 @@ Create a `.env` file in the project root:
 
 ```env
 # GitHub Configuration
-GITHUB_TOKEN=ghp_your_token_here
+GITHUB_TOKEN=<your_github_token>
 GITHUB_OWNER=your-org
 GITHUB_REPO=your-repo
-GITHUB_WEBHOOK_SECRET=your_webhook_secret
+GITHUB_WEBHOOK_SECRET=<your_webhook_secret>
 
 # Development Settings
 LOG_LEVEL=DEBUG
@@ -111,8 +111,8 @@ USE_LLM_LOGIC=false
 USE_LLM_SECURITY=false
 
 # LLM Providers (optional)
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=<your_anthropic_api_key>
+OPENAI_API_KEY=<your_openai_api_key>
 ```
 
 ### Step 6: Get GitHub Token

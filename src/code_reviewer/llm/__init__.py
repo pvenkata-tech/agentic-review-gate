@@ -70,13 +70,13 @@ class LLMClient(ABC):
 class ClaudeClient(LLMClient):
     """Anthropic Claude API client."""
     
-    def __init__(self, api_key: str = None, model: str = "claude-3-sonnet-20240229"):
+    def __init__(self, api_key: str = None, model: str = "claude-opus-4-1-20250805"):
         """
         Initialize Claude client.
         
         Args:
             api_key: Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
-            model: Model name (defaults to Claude 3 Sonnet)
+            model: Model name (defaults to Claude Opus 4.1 - latest available)
         """
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.model = model
@@ -123,13 +123,13 @@ class ClaudeClient(LLMClient):
 class GPT4Client(LLMClient):
     """OpenAI GPT-4 API client."""
     
-    def __init__(self, api_key: str = None, model: str = "gpt-4-turbo"):
+    def __init__(self, api_key: str = None, model: str = "gpt-4o"):
         """
         Initialize GPT-4 client.
         
         Args:
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
-            model: Model name (defaults to GPT-4 Turbo)
+            model: Model name (defaults to GPT-4o - latest reasoning model)
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
