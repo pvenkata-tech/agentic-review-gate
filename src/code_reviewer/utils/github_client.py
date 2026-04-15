@@ -95,23 +95,35 @@ class GitHubClient:
         )
         
         logger.debug(f"Fetching PR diff from: {url}")
-        logger.debug(f"Using Accept header: application/vnd.github.v3.diff")
+        logger.debug(f"Using Accept header: application/vnd.github.diff")
         
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                url,
-                headers={**self.headers, "Accept": "application/vnd.github.v3.diff"},
-            )
-            response.raise_for_status()
-            
-            diff_content = response.text
-            logger.debug(f"Received diff: {len(diff_content)} characters")
-            if diff_content:
-                logger.debug(f"First 300 chars:\n{diff_content[:300]}")
-            else:
-                logger.warning("PR diff is empty!")
-            
-            return diff_content
+        # Create headers for diff - use modern GitHub API v3 diff format
+        diff_headers = {
+            "Authorization": f"token {self.config.token}",
+            "Accept": "application/vnd.github.diff",
+            "User-Agent": "agentic-code-reviewer",
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=diff_headers)
+                response.raise_for_status()
+                
+                diff_content = response.text
+                logger.info(f"Successfully fetched PR #{pr_number} diff: {len(diff_content)} characters")
+                
+                if not diff_content or len(diff_content.strip()) == 0:
+                    logger.warning(f"PR #{pr_number} diff is empty! Status: {response.status_code}")
+                    logger.debug(f"Response headers: {dict(response.headers)}")
+                else:
+                    # Log first part of diff to understand format
+                    first_lines = "\n".join(diff_content.split("\n")[:10])
+                    logger.debug(f"First 10 lines of diff:\n{first_lines}")
+                
+                return diff_content
+        except Exception as e:
+            logger.error(f"Failed to fetch PR diff: {str(e)}", pr_number=pr_number)
+            raise
     
     async def post_review_comment(
         self, pr_number: int, comment_body: str, commit_id: Optional[str] = None
