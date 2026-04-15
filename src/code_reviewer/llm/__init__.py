@@ -70,13 +70,13 @@ class LLMClient(ABC):
 class ClaudeClient(LLMClient):
     """Anthropic Claude API client."""
     
-    def __init__(self, api_key: str = None, model: str = "claude-3-sonnet-20240229"):
+    def __init__(self, api_key: str = None, model: str = "claude-3-5-sonnet-20241022"):
         """
         Initialize Claude client.
         
         Args:
             api_key: Anthropic API key (defaults to ANTHROPIC_API_KEY env var)
-            model: Model name (defaults to Claude 3 Sonnet)
+            model: Model name (defaults to Claude 3.5 Sonnet)
         """
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.model = model
