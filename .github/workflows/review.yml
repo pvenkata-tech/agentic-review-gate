@@ -1,0 +1,117 @@
+name: Agentic Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    permissions:
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      
+      - name: Get PR Diff
+        id: diff
+        run: |
+          DIFF=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD)
+          echo "diff_content<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIFF" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Prepare Payload
+        id: payload
+        run: |
+          PAYLOAD=$(cat <<'EOF'
+          {
+            "pr_number": ${{ github.event.pull_request.number }},
+            "owner": "${{ github.repository_owner }}",
+            "repo": "${{ github.event.repository.name }}",
+            "title": "${{ github.event.pull_request.title }}",
+            "author": "${{ github.event.pull_request.user.login }}",
+            "branch": "${{ github.event.pull_request.head.ref }}",
+            "base_branch": "${{ github.event.pull_request.base.ref }}",
+            "diff_content": $(printf '%s\n' "${{ steps.diff.outputs.diff_content }}" | jq -Rs .)
+          }
+          EOF
+          )
+          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
+      
+      - name: Trigger Agentic Review
+        id: review
+        run: |
+          # Check if service is configured
+          if [ -z "${{ secrets.AGENTIC_REVIEW_API_URL }}" ]; then
+            echo "⚠️  AGENTIC_REVIEW_API_URL not configured. Skipping review."
+            exit 0
+          fi
+          
+          # Send request to the review service
+          RESPONSE=$(curl -s -X POST \
+            "${{ secrets.AGENTIC_REVIEW_API_URL }}/review" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.AGENTIC_REVIEW_API_KEY }}" \
+            -d '${{ steps.payload.outputs.payload }}' \
+            --max-time 120)
+          
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+          
+          # Check response status
+          if echo "$RESPONSE" | jq -e '.status == "accepted"' > /dev/null 2>&1; then
+            echo "✅ Review triggered successfully"
+            exit 0
+          else
+            echo "❌ Failed to trigger review"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+      
+      - name: Comment on PR (Initial)
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🤖 **Agentic Code Review** initiated. Analysis in progress...'
+            })
+
+      - name: Wait for Review (Mock - 10s)
+        run: |
+          echo "Waiting for async review to complete..."
+          sleep 10
+          echo "Note: In production, implement polling or webhook callback"
+
+  # Optional: Notification step for failures
+  review-failure:
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: review
+    steps:
+      - name: Comment Failure
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **Agentic Code Review** failed. Please check the workflow logs.'
+            })

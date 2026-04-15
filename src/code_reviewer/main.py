@@ -13,8 +13,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
-import hmac
-import hashlib
 import os
 
 from code_reviewer.core.state import ReviewState, PRMetadata
@@ -22,6 +20,9 @@ from code_reviewer.core.coordinator import ReviewCoordinator
 from code_reviewer.utils.logger import get_logger
 from code_reviewer.utils.github_client import GitHubClient, GitHubConfig
 from code_reviewer.utils.diff_parser import DiffParser, DiffAnalyzer
+from code_reviewer.utils.webhooks import WebhookHandler, WebhookValidationError
+from code_reviewer.prompts import get_prompt_for_agent
+from code_reviewer.utils.cache import get_cache_backend
 
 
 # Initialize
@@ -32,40 +33,23 @@ app = FastAPI(
 )
 
 logger = get_logger()
-coordinator = ReviewCoordinator()
+
+# Initialize webhook handler with GitHub secret
+github_webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+webhook_handler = WebhookHandler(secret=github_webhook_secret)
+if github_webhook_secret:
+    logger.info("Webhook handler initialized with signature validation enabled")
+else:
+    logger.warning("Webhook handler: signature validation disabled (GITHUB_WEBHOOK_SECRET not set)")
+
+# Initialize cache backend for persistent state
+cache_backend = get_cache_backend()
+logger.info(f"Initialized cache backend: {type(cache_backend).__name__}")
+
+# Initialize coordinator with cache backend for finding deduplication
+coordinator = ReviewCoordinator(cache_backend=cache_backend)
 
 
-def verify_github_webhook_signature(payload: bytes, signature: str, secret: str) -> bool:
-    """
-    Verify GitHub webhook X-Hub-Signature-256 header.
-    
-    Args:
-        payload: Raw request body bytes
-        signature: X-Hub-Signature-256 header value (format: sha256=...)
-        secret: GitHub webhook secret
-        
-    Returns:
-        True if signature is valid, False otherwise
-    """
-    if not signature or not signature.startswith("sha256="):
-        return False
-    
-    try:
-        # Extract the hash from the header
-        expected_signature = signature.split("=", 1)[1]
-        
-        # Calculate the HMAC
-        calculated_hash = hmac.new(
-            secret.encode(),
-            payload,
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Compare (use constant-time comparison to prevent timing attacks)
-        return hmac.compare_digest(calculated_hash, expected_signature)
-    except Exception as e:
-        logger.error(f"Webhook signature verification failed: {str(e)}")
-        return False
 
 
 # Pydantic models for API
@@ -104,9 +88,11 @@ async def review_pr(request: ReviewRequest, background_tasks: BackgroundTasks):
     
     This endpoint:
     1. Fetches PR metadata from GitHub
-    2. Initiates review with the coordinator
-    3. Posts findings as a GitHub comment
-    4. Returns summary statistics
+    2. Loads previous findings (for deduplication)
+    3. Initiates review with the coordinator
+    4. Saves findings to cache for next review
+    5. Posts findings as a GitHub comment
+    6. Returns summary statistics
     
     Args:
         request: ReviewRequest with PR details
@@ -146,11 +132,32 @@ async def review_pr(request: ReviewRequest, background_tasks: BackgroundTasks):
             deletions=pr_info.get("deletions", 0),
         )
         
+        # Load previous findings from cache for deduplication
+        cache_key = f"pr:{request.pr_number}:findings"
+        previous_finding_ids = cache_backend.get(cache_key)
+        if previous_finding_ids:
+            logger.info(
+                f"Loaded {len(previous_finding_ids)} previous findings from cache",
+                pr_number=request.pr_number
+            )
+        
         # Create initial state
         initial_state = ReviewState(pr_metadata=pr_metadata)
         
-        # Run review (in background to avoid timeout)
-        review_state = await coordinator.review_pr(initial_state)
+        # Run review with deduplication support
+        review_state = await coordinator.review_pr(
+            initial_state,
+            previous_finding_ids=previous_finding_ids
+        )
+        
+        # Cache the new findings for next review
+        new_finding_ids = review_state.get_finding_ids()
+        if new_finding_ids:
+            cache_backend.set(cache_key, new_finding_ids, ex=86400*30)  # 30 days
+            logger.info(
+                f"Cached {len(new_finding_ids)} finding IDs for next review",
+                pr_number=request.pr_number
+            )
         
         # Get stats
         stats = coordinator.get_review_stats(review_state)
@@ -188,85 +195,91 @@ async def review_pr(request: ReviewRequest, background_tasks: BackgroundTasks):
 @app.post("/webhook/github")
 async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     """
-    Handle GitHub webhook events.
+    Handle GitHub webhook events with full validation.
     
-    Security:
-    - Verifies X-Hub-Signature-256 header
-    - Only processes pull_request events
+    This endpoint:
+    1. Validates X-Hub-Signature-256 HMAC-SHA256 signature
+    2. Filters for pull_request events only
+    3. Only processes open/synchronize/reopen actions
+    4. Extracts PR metadata and triggers async review
     
-    This endpoint receives webhooks for:
-    - pull_request events (opened, synchronize, reopened)
+    Security Features:
+    - Constant-time HMAC signature comparison (prevents timing attacks)
+    - Validates webhook secret (GITHUB_WEBHOOK_SECRET)
+    - Filters event types to prevent abuse
+    - Validates payload structure
     
-    Args:
-        request: FastAPI request object
-        background_tasks: FastAPI background tasks
-        
     Returns:
-        JSON response acknowledging receipt
+        JSON response with status and details
+        
+    Raises:
+        HTTPException: 403 if signature invalid, 400 if payload invalid
     """
-    # Get the raw body for signature verification
+    # Get raw body for signature validation (must be before any parsing)
     raw_body = await request.body()
     
-    # Get GitHub secret from environment
-    github_secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+    # Extract required headers
+    signature_header = request.headers.get("X-Hub-Signature-256", "")
+    event_type = request.headers.get("X-GitHub-Event", "")
     
-    # Verify signature (skip if secret not configured for development)
-    if github_secret:
-        signature = request.headers.get("X-Hub-Signature-256", "")
-        if not verify_github_webhook_signature(raw_body, signature, github_secret):
-            logger.error("GitHub webhook signature verification failed")
-            raise HTTPException(
-                status_code=403,
-                detail="Invalid webhook signature"
-            )
-    else:
-        logger.warning("GITHUB_WEBHOOK_SECRET not configured - signature verification skipped")
-    
-    # Parse payload
-    try:
-        payload = await request.json()
-    except Exception as e:
-        logger.error(f"Failed to parse webhook payload: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid JSON payload"
-        )
-    
-    # Verify it's a pull request event
-    event_type = payload.get("action")
-    pr = payload.get("pull_request")
-    
-    if not pr:
-        logger.debug("Webhook received but not a PR event, ignoring")
-        return JSONResponse({"status": "ignored", "reason": "not a PR event"})
-    
-    # Only trigger on new PR or new commits
-    if event_type not in ("opened", "synchronize", "reopened"):
-        logger.debug(f"Webhook received but action='{event_type}' not in trigger list")
-        return JSONResponse({"status": "ignored", "reason": f"action: {event_type}"})
-    
-    pr_number = pr["number"]
-    
-    logger.info(
-        f"GitHub webhook received for PR #{pr_number}",
-        pr_number=pr_number,
-        action=event_type,
+    logger.debug(
+        f"Webhook received",
+        event_type=event_type,
+        signature_present=bool(signature_header)
     )
     
-    # Get GitHub token from environment or repo
+    # Process and validate webhook
+    should_process, payload, error_message = webhook_handler.process_webhook(
+        raw_body=raw_body,
+        signature_header=signature_header,
+        event_type=event_type
+    )
+    
+    # Handle validation errors
+    if error_message:
+        if "signature validation failed" in error_message:
+            logger.error(f"Webhook validation failed: {error_message}")
+            raise HTTPException(
+                status_code=403,
+                detail="Webhook signature validation failed"
+            )
+        else:
+            # Non-critical errors (event type not supported, etc)
+            logger.debug(f"Webhook ignored: {error_message}")
+            return JSONResponse(webhook_handler.get_ignored_response(error_message))
+    
+    # If we shouldn't process this webhook, return ignored
+    if not should_process:
+        logger.debug(f"Webhook ignored: {error_message or 'event does not trigger review'}")
+        if payload:
+            return JSONResponse(webhook_handler.get_ignored_response(error_message or "Event does not trigger review"))
+        else:
+            return JSONResponse(webhook_handler.get_ignored_response(error_message or "Invalid payload"))
+    
+    # Got a valid trigger event
+    logger.info(
+        f"GitHub webhook accepted for PR review",
+        pr_number=payload.pr_number,
+        repo=payload.full_repo,
+        action=payload.action,
+        files_changed=payload.changed_files,
+    )
+    
+    # Get GitHub token
     github_token = os.getenv("GITHUB_TOKEN", "")
     if not github_token:
-        logger.error("GITHUB_TOKEN not configured")
-        return JSONResponse({
-            "status": "error",
-            "reason": "GITHUB_TOKEN not configured"
-        })
+        logger.error("GITHUB_TOKEN not configured - cannot process webhook")
+        return JSONResponse(
+            webhook_handler.get_error_response(
+                "GITHUB_TOKEN not configured on server"
+            )
+        )
     
     # Trigger review in background
     review_request = ReviewRequest(
-        pr_number=pr_number,
-        owner=payload["repository"]["owner"]["login"],
-        repo=payload["repository"]["name"],
+        pr_number=payload.pr_number,
+        owner=payload.owner,
+        repo=payload.repo,
         github_token=github_token,
     )
     

@@ -11,6 +11,7 @@ from .core.state import (
     Severity,
 )
 from .core.coordinator import ReviewCoordinator
+from .prompts import get_prompt_for_agent, get_all_prompts, AgentPersona
 
 __all__ = [
     "ReviewState",
@@ -19,4 +20,7 @@ __all__ = [
     "PRMetadata",
     "Severity",
     "ReviewCoordinator",
+    "get_prompt_for_agent",
+    "get_all_prompts",
+    "AgentPersona",
 ]

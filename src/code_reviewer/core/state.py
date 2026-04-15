@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
+import hashlib
 
 
 class Severity(str, Enum):
@@ -22,6 +23,7 @@ class AgentFinding(BaseModel):
     """Represents a single finding from an agent's analysis.
     
     This is the fundamental unit of work passed through the blackboard.
+    Each finding has a finding_id for deduplication across review cycles.
     """
     file_path: str = Field(..., description="Relative path to the file being reviewed")
     line_number: Optional[int] = Field(None, description="Line number (1-indexed) of the finding")
@@ -30,9 +32,24 @@ class AgentFinding(BaseModel):
     suggestion: str = Field(..., description="Actionable suggestion to resolve the finding")
     severity: Severity = Field(..., description="Severity level: info, warning, or critical")
     agent_id: str = Field(..., description="ID of the agent that generated this finding")
+    finding_id: Optional[str] = Field(None, description="Hash-based ID for deduplication (computed from file_path + finding_type + description)")
+    is_duplicate: bool = Field(default=False, description="True if this finding was flagged in a previous review")
     
     class Config:
         use_enum_values = False
+    
+    def compute_finding_id(self) -> str:
+        """Compute a stable hash ID for deduplication.
+        
+        The ID is based on file path, finding type, and description to allow
+        detection of duplicate findings across review cycles.
+        
+        Returns:
+            Hash string (first 12 chars of SHA256)
+        """
+        content = f"{self.file_path}::{self.finding_type}::{self.description}"
+        hash_obj = hashlib.sha256(content.encode())
+        return hash_obj.hexdigest()[:12]
 
 
 class AgentMetadata(BaseModel):
@@ -153,3 +170,34 @@ class ReviewState(BaseModel):
             "files_affected": len(set(f.file_path for f in self.findings)),
             "is_blocked": self.is_blocked,
         }
+    
+    def compute_finding_ids(self) -> None:
+        """Compute finding_id for all findings (call before deduplication).
+        
+        This must be called after agents add findings but before deduplication.
+        """
+        for finding in self.findings:
+            if not finding.finding_id:
+                finding.finding_id = finding.compute_finding_id()
+    
+    def mark_duplicates(self, previous_finding_ids: List[str]) -> None:
+        """Mark findings that were flagged in previous reviews.
+        
+        Args:
+            previous_finding_ids: List of finding_ids from previous review cycles
+        """
+        for finding in self.findings:
+            if finding.finding_id and finding.finding_id in previous_finding_ids:
+                finding.is_duplicate = True
+    
+    def get_new_findings(self) -> List[AgentFinding]:
+        """Get only new findings (not marked as duplicates)."""
+        return [f for f in self.findings if not f.is_duplicate]
+    
+    def get_duplicate_findings(self) -> List[AgentFinding]:
+        """Get findings that were flagged in previous reviews."""
+        return [f for f in self.findings if f.is_duplicate]
+    
+    def get_finding_ids(self) -> List[str]:
+        """Get all finding IDs for storage/caching in persistent state."""
+        return [f.finding_id for f in self.findings if f.finding_id]
