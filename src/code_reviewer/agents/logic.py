@@ -164,22 +164,58 @@ class LogicAgent(BaseAgent):
     
     def _format_diff_for_llm(self, file_diffs: List) -> str:
         """Format parsed diff for inclusion in LLM prompt."""
-        result = []
-        for file_diff in file_diffs[:10]:  # Limit to first 10 files
-            result.append(f"\n### {file_diff.file_path}")
-            
-            # Collect all lines from all hunks
-            all_lines = []
-            for hunk in file_diff.hunks:
-                all_lines.extend(hunk.lines)
-            
-            result.append(f"Lines: {len(all_lines)} total")
-            
-            # Include first 500 chars of diff
-            content_preview = "\n".join(all_lines[:20])
-            result.append(f"```\n{content_preview[:500]}...\n```")
+        if not file_diffs:
+            return "No files changed in this PR."
         
-        return "\n".join(result)
+        result = []
+        result.append(f"## Code Changes ({len(file_diffs)} files modified)\n")
+        
+        for file_diff in file_diffs[:15]:  # Limit to first 15 files
+            result.append(f"\n### File: `{file_diff.file_path}`")
+            
+            # Add file status
+            if file_diff.is_added:
+                result.append("**Status**: NEW FILE")
+            elif file_diff.is_deleted:
+                result.append("**Status**: DELETED")
+            elif file_diff.is_renamed:
+                result.append(f"**Status**: RENAMED (from `{file_diff.old_file}`)")
+            else:
+                result.append("**Status**: MODIFIED")
+            
+            if file_diff.is_binary:
+                result.append("(Binary file - not analyzed)")
+                continue
+            
+            # If no hunks, indicate that
+            if not file_diff.hunks:
+                result.append("(No code changes in diff, or file only has whitespace changes)")
+                continue
+            
+            # Collect all lines from all hunks with better context
+            for hunk_idx, hunk in enumerate(file_diff.hunks):
+                result.append(f"\n**Hunk {hunk_idx + 1}** (lines {hunk.new_start}-{hunk.new_start + hunk.new_count}):")
+                
+                # Include the actual lines from the hunk
+                if hunk.lines:
+                    # Format the diff lines with better readability
+                    formatted_lines = []
+                    for line in hunk.lines[:40]:  # Limit lines per hunk
+                        if line.startswith('+') and not line.startswith('+++'):
+                            formatted_lines.append(f"➕ {line}")
+                        elif line.startswith('-') and not line.startswith('---'):
+                            formatted_lines.append(f"➖ {line}")
+                        else:
+                            formatted_lines.append(f"  {line}")
+                    
+                    result.append("```diff\n" + "\n".join(formatted_lines) + "\n```")
+                
+                # Also include statistics about the hunk
+                if hunk.added_lines or hunk.removed_lines:
+                    result.append(f"- Lines added: {len(hunk.added_lines)}")
+                    result.append(f"- Lines removed: {len(hunk.removed_lines)}")
+        
+        return "\n".join(result) if result else "No analyzable changes in this PR."
     
     def _parse_llm_findings(
         self,
