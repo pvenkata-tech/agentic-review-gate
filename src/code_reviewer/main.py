@@ -1,7 +1,7 @@
 """
 FastAPI Entrypoint: Main service for the code reviewer system.
 
-Provides REST endpoints for:
+Provides REST endpoints:
 - Triggering PR reviews
 - Receiving GitHub webhook events
 - Status and health checks
@@ -14,6 +14,10 @@ from pydantic import BaseModel
 from typing import Optional
 import asyncio
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from code_reviewer.core.state import ReviewState, PRMetadata
 from code_reviewer.core.coordinator import ReviewCoordinator
