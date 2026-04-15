@@ -76,6 +76,60 @@ class GitHubClient:
             response.raise_for_status()
             return response.json()
     
+    async def get_pr_files(self, pr_number: int) -> list:
+        """
+        Fetch the list of files changed in a PR.
+        
+        The /pulls/{pr} endpoint doesn't include files list by default.
+        This endpoint returns all files modified/added/deleted in the PR.
+        
+        Args:
+            pr_number: GitHub PR number
+            
+        Returns:
+            List of file objects with filename, status, additions, deletions
+        """
+        from code_reviewer.utils.logger import get_logger
+        logger = get_logger()
+        
+        url = (
+            f"{self.config.base_url}/repos/{self.config.owner}/"
+            f"{self.config.repo}/pulls/{pr_number}/files"
+        )
+        
+        logger.debug(f"Fetching PR files list from: {url}")
+        
+        all_files = []
+        page = 1
+        per_page = 100  # Max per page
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                while True:
+                    response = await client.get(
+                        url,
+                        headers=self.headers,
+                        params={"page": page, "per_page": per_page}
+                    )
+                    response.raise_for_status()
+                    
+                    files = response.json()
+                    if not files:
+                        break
+                    
+                    all_files.extend(files)
+                    page += 1
+                    
+                    # Stop if we got less than per_page items (last page)
+                    if len(files) < per_page:
+                        break
+            
+            logger.info(f"Successfully fetched PR #{pr_number} files: {len(all_files)} files changed")
+            return all_files
+        except Exception as e:
+            logger.error(f"Failed to fetch PR files list: {str(e)}", pr_number=pr_number)
+            raise
+    
     async def get_pr_diff(self, pr_number: int) -> str:
         """
         Fetch the full diff for a PR.

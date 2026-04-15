@@ -140,6 +140,10 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
         pr_info = await github_client.get_pr_info(request.pr_number)
         pr_diff = await github_client.get_pr_diff(request.pr_number)
         
+        # Fetch the list of files changed (separate endpoint)
+        pr_files = await github_client.get_pr_files(request.pr_number)
+        files_changed = [f["filename"] for f in pr_files]
+        
         # Extract data for ReviewState
         pr_metadata = PRMetadata(
             pr_number=request.pr_number,
@@ -148,7 +152,7 @@ async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTa
             branch=pr_info["head"]["ref"],
             base_branch=pr_info["base"]["ref"],
             diff_content=pr_diff,
-            files_changed=[f["filename"] for f in pr_info.get("files", [])],
+            files_changed=files_changed,
             additions=pr_info.get("additions", 0),
             deletions=pr_info.get("deletions", 0),
         )
