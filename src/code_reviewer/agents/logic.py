@@ -7,30 +7,47 @@ This agent focuses on:
 - Dead code detection
 - Code complexity analysis
 - Architectural concerns
+
+Can operate in two modes:
+1. LLM-powered: Uses Claude or GPT-4 with specialized prompts
+2. Rule-based: Uses regex/AST patterns for offline analysis
 """
 
-from typing import List
+from typing import List, Optional
 from code_reviewer.core.state import ReviewState, AgentFinding, Severity
+from code_reviewer.prompts import get_prompt_for_agent
+from code_reviewer.llm import get_llm_client, LLMClient, LLMResponse, MockLLMClient
+from code_reviewer.utils.diff_parser import DiffParser
 from .base import BaseAgent
 
 
 class LogicAgent(BaseAgent):
     """Agent for detecting logic and design pattern issues."""
     
-    def __init__(self):
+    def __init__(self, llm_client: Optional[LLMClient] = None, use_llm: bool = True):
+        """
+        Initialize Logic Agent.
+        
+        Args:
+            llm_client: LLM client to use (if None, auto-detects)
+            use_llm: Whether to use LLM for analysis (default True)
+        """
         super().__init__(agent_id="logic")
+        self.use_llm = use_llm
+        
+        if use_llm:
+            self.llm_client = llm_client or get_llm_client()
+        else:
+            self.llm_client = None
+        
+        self.prompt_template = get_prompt_for_agent("logic")
     
     async def analyze(self, state: ReviewState) -> List[AgentFinding]:
         """
         Analyze PR for logic and design pattern issues.
         
-        In a production system, this would integrate with an LLM or
-        static analysis tool to detect:
-        - Unused variables and imports
-        - Complex nested conditionals
-        - Missing abstractions
-        - Violation of SOLID principles
-        - Code duplication
+        If LLM is available, sends the diff and prompt to Claude/GPT-4.
+        Otherwise, falls back to rule-based pattern matching.
         
         Args:
             state: Current ReviewState
@@ -40,17 +57,95 @@ class LogicAgent(BaseAgent):
         """
         findings: List[AgentFinding] = []
         
+        # Parse the diff to extract only changed code
+        diff_parser = DiffParser()
+        file_diffs = diff_parser.parse(state.pr_metadata.diff_content)
+        
+        # Prepare diff content for LLM
+        diff_text = self._format_diff_for_llm(file_diffs)
+        
+        if self.use_llm and self.llm_client and not isinstance(self.llm_client, MockLLMClient):
+            # Use LLM for sophisticated analysis
+            findings = await self._analyze_with_llm(state, diff_text)
+        else:
+            # Fall back to rule-based analysis
+            findings = await self._analyze_with_rules(state, diff_text)
+        
+        return findings
+    
+    async def _analyze_with_llm(
+        self,
+        state: ReviewState,
+        diff_text: str
+    ) -> List[AgentFinding]:
+        """
+        Analyze using LLM (Claude or GPT-4).
+        
+        Args:
+            state: ReviewState with PR metadata
+            diff_text: Formatted diff content
+            
+        Returns:
+            List of findings from LLM analysis
+        """
+        # Format the prompt with PR details
+        prompt = self.prompt_template.format(
+            pr_number=state.pr_metadata.pr_number,
+            pr_title=state.pr_metadata.title,
+            author=state.pr_metadata.author,
+            files_changed_count=len(state.pr_metadata.files_changed),
+            additions=state.pr_metadata.additions,
+            deletions=state.pr_metadata.deletions,
+            file_diffs=diff_text,
+        )
+        
+        try:
+            # Call LLM
+            response: LLMResponse = await self.llm_client.call(
+                system_prompt=prompt["system"],
+                user_prompt=prompt["user"],
+                temperature=0.3,  # Lower temperature for deterministic analysis
+                max_tokens=2000,
+            )
+            
+            # Parse response into findings
+            findings = self._parse_llm_findings(response, state)
+            
+            return findings
+        
+        except Exception as e:
+            # Log error and fall back to rules
+            logger = self._get_logger()
+            logger.error(f"LLM analysis failed: {str(e)}")
+            return await self._analyze_with_rules(state, diff_text)
+    
+    async def _analyze_with_rules(
+        self,
+        state: ReviewState,
+        diff_text: str
+    ) -> List[AgentFinding]:
+        """
+        Analyze using rule-based pattern matching.
+        
+        This is the fallback when LLM is not available or fails.
+        
+        Args:
+            state: ReviewState with PR metadata
+            diff_text: Formatted diff content
+            
+        Returns:
+            List of findings from pattern matching
+        """
+        findings: List[AgentFinding] = []
+        
         # Analyze each modified file
         for file_path in state.pr_metadata.files_changed:
-            # Example analysis patterns
-            # In production, integrate with AST analysis, LLM, or static analyzer
-            
-            # Pattern 1: Check for overly long methods
+            # Pattern 1: Check for overly long methods/functions
             findings.extend(
                 await self._check_method_complexity(file_path, state)
             )
             
-            # Pattern 2: Check for duplicated code
+            # Pattern 2: Check for code duplication
             findings.extend(
                 await self._check_code_duplication(file_path, state)
             )
@@ -66,6 +161,66 @@ class LogicAgent(BaseAgent):
             )
         
         return findings
+    
+    def _format_diff_for_llm(self, file_diffs: List) -> str:
+        """Format parsed diff for inclusion in LLM prompt."""
+        result = []
+        for file_diff in file_diffs[:10]:  # Limit to first 10 files
+            result.append(f"\n### {file_diff.file_path}")
+            result.append(f"Lines: {len(file_diff.lines)} total")
+            
+            # Include first 500 chars of diff
+            content_preview = "\n".join(file_diff.lines[:20])
+            result.append(f"```\n{content_preview[:500]}...\n```")
+        
+        return "\n".join(result)
+    
+    def _parse_llm_findings(
+        self,
+        response: LLMResponse,
+        state: ReviewState
+    ) -> List[AgentFinding]:
+        """Parse JSON findings from LLM response."""
+        findings = []
+        
+        try:
+            data = response.parse_json()
+            
+            for finding_data in data.get("findings", []):
+                finding = AgentFinding(
+                    file_path=finding_data.get("file_path", "unknown"),
+                    line_number=finding_data.get("line_number"),
+                    finding_type=finding_data.get("finding_type", "Code Quality"),
+                    description=finding_data.get("description", ""),
+                    suggestion=finding_data.get("suggestion", ""),
+                    severity=self._parse_severity(finding_data.get("severity")),
+                    agent_id=self.agent_id,
+                )
+                findings.append(finding)
+        
+        except Exception as e:
+            logger = self._get_logger()
+            logger.warning(f"Failed to parse LLM findings: {str(e)}")
+        
+        return findings
+    
+    def _get_logger(self):
+        """Get logger instance."""
+        from code_reviewer.utils.logger import get_logger
+        return get_logger()
+    
+    def _parse_severity(self, severity_str: str) -> Severity:
+        """Parse severity string to enum."""
+        if not severity_str:
+            return Severity.INFO
+        
+        severity_str = severity_str.lower()
+        if severity_str == "critical":
+            return Severity.CRITICAL
+        elif severity_str == "warning":
+            return Severity.WARNING
+        else:
+            return Severity.INFO
     
     async def _check_method_complexity(
         self, file_path: str, state: ReviewState

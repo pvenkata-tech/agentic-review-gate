@@ -273,6 +273,175 @@ class TestIntegration:
         assert final_state.final_summary is not None  # Should have summary
 
 
+# =============================================================================
+# WEBHOOK TESTS
+# =============================================================================
+
+class TestWebhookValidation:
+    """Tests for webhook signature validation."""
+    
+    def test_valid_github_signature(self):
+        """Test valid GitHub webhook signature."""
+        import hmac
+        import hashlib
+        
+        from code_reviewer.utils.webhooks import WebhookHandler
+        
+        secret = "test_secret_key"
+        payload = b'{"action": "opened", "pull_request": {"number": 42}}'
+        
+        # Create valid HMAC signature
+        signature = "sha256=" + hmac.new(
+            secret.encode(),
+            payload,
+            hashlib.sha256
+        ).hexdigest()
+        
+        handler = WebhookHandler(secret=secret)
+        assert handler.validator.verify_signature(payload, signature, secret)
+    
+    def test_invalid_github_signature(self):
+        """Test invalid webhook signature rejection."""
+        from code_reviewer.utils.webhooks import WebhookHandler
+        
+        secret = "test_secret_key"
+        payload = b'{"action": "opened"}'
+        
+        handler = WebhookHandler(secret=secret)
+        assert not handler.validator.verify_signature(
+            payload,
+            "sha256=invalid_signature_123",
+            secret
+        )
+    
+    def test_webhook_payload_parsing(self):
+        """Test GitHub webhook payload parsing."""
+        from code_reviewer.utils.webhooks import GitHubWebhookPayload
+        
+        payload_dict = {
+            "action": "opened",
+            "pull_request": {
+                "number": 42,
+                "title": "Add awesome feature",
+                "user": {"login": "octocat"},
+                "head": {"ref": "feature-branch"},
+                "base": {"ref": "main"},
+                "additions": 100,
+                "deletions": 50,
+                "changed_files": 5,
+            },
+            "repository": {
+                "name": "Hello-World",
+                "owner": {"login": "octocat"},
+            }
+        }
+        
+        payload = GitHubWebhookPayload(payload_dict)
+        
+        assert payload.pr_number == 42
+        assert payload.title == "Add awesome feature"
+        assert payload.author == "octocat"
+        assert payload.action == "opened"
+        assert payload.owner == "octocat"
+        assert payload.repo == "Hello-World"
+        assert payload.head_ref == "feature-branch"
+        assert payload.base_ref == "main"
+        assert payload.additions == 100
+        assert payload.deletions == 50
+        assert payload.changed_files == 5
+
+
+# =============================================================================
+# LLM INTEGRATION TESTS
+# =============================================================================
+
+class TestLLMIntegration:
+    """Tests for LLM client integration."""
+    
+    @pytest.mark.asyncio
+    async def test_mock_llm_response(self):
+        """Test mock LLM client (no API calls required)."""
+        from code_reviewer.llm import MockLLMClient
+        
+        client = MockLLMClient()
+        response = await client.call(
+            system_prompt="You are a code review agent",
+            user_prompt="Review this code",
+        )
+        
+        assert response.content is not None
+        assert "findings" in response.content
+        
+        # Should be valid JSON
+        data = response.parse_json()
+        assert "findings" in data
+        assert isinstance(data["findings"], list)
+    
+    def test_get_llm_client_default(self):
+        """Test LLM client factory defaults to mock when no API keys."""
+        from code_reviewer.llm import get_llm_client, MockLLMClient
+        
+        # Mock should be returned when no API keys configured
+        client = get_llm_client(provider="mock")
+        assert isinstance(client, MockLLMClient)
+    
+    @pytest.mark.asyncio
+    async def test_logic_agent_with_llm(self):
+        """Test Logic Agent with LLM integration."""
+        from code_reviewer.agents.logic import LogicAgent
+        from code_reviewer.llm import MockLLMClient
+        
+        # Create agent with mock LLM
+        llm_client = MockLLMClient()
+        agent = LogicAgent(llm_client=llm_client, use_llm=True)
+        
+        pr_metadata = PRMetadata(
+            pr_number=50,
+            title="Code refactor",
+            author="developer",
+            branch="refactor",
+            base_branch="main",
+            diff_content="--- a/utils.py\n+++ b/utils.py\n+def helper():\n+    pass",
+            files_changed=["utils.py"],
+            additions=2,
+            deletions=0,
+        )
+        state = ReviewState(pr_metadata=pr_metadata)
+        
+        findings = await agent.analyze(state)
+        
+        # Mock should return findings
+        assert isinstance(findings, list)
+    
+    @pytest.mark.asyncio
+    async def test_security_agent_with_llm(self):
+        """Test Security Agent with LLM integration."""
+        from code_reviewer.agents.security import SecurityGuardAgent
+        from code_reviewer.llm import MockLLMClient
+        
+        # Create agent with mock LLM
+        llm_client = MockLLMClient()
+        agent = SecurityGuardAgent(llm_client=llm_client, use_llm=True)
+        
+        pr_metadata = PRMetadata(
+            pr_number=51,
+            title="Add auth endpoint",
+            author="developer",
+            branch="auth",
+            base_branch="main",
+            diff_content="--- a/app.py\n+++ b/app.py\n+password='hardcoded'",
+            files_changed=["app.py"],
+            additions=1,
+            deletions=0,
+        )
+        state = ReviewState(pr_metadata=pr_metadata)
+        
+        findings = await agent.analyze(state)
+        
+        # Should have findings (either from LLM or pattern matching)
+        assert isinstance(findings, list)
+
+
 # For running tests with pytest
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -69,6 +69,6 @@ disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-v --cov=src/code_reviewer --cov-report=term-specific --strict-markers"
+addopts = "-v --strict-markers"
 testpaths = ["tests"]
 asyncio_mode = "auto"

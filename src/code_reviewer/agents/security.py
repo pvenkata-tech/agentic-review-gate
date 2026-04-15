@@ -8,20 +8,223 @@ This agent focuses on:
 - SQL injection vulnerabilities
 - XSS vulnerabilities
 - Insecure cryptography usage
+
+Can operate in two modes:
+1. LLM-powered: Uses Claude or GPT-4 with specialized security prompts
+2. Rule-based: Uses regex patterns for offline detection
 """
 
 import re
-from typing import List
-from code_reviewer.core.state import ReviewState, AgentFinding, Severity
+from typing import List, Optional
+from code_reviewer.core.state import ReviewState, AgentFinding, Severity, AgentMetadata
+from code_reviewer.prompts import get_prompt_for_agent
+from code_reviewer.llm import get_llm_client, LLMClient, LLMResponse, MockLLMClient
+from code_reviewer.utils.diff_parser import DiffParser
 from .base import BaseAgent
 
 
 class SecurityGuardAgent(BaseAgent):
     """Agent for detecting security vulnerabilities and sensitive data leaks."""
     
-    def __init__(self):
+    def __init__(self, llm_client: Optional[LLMClient] = None, use_llm: bool = True):
+        """
+        Initialize Security Agent.
+        
+        Args:
+            llm_client: LLM client to use (if None, auto-detects)
+            use_llm: Whether to use LLM for analysis (default True)
+        """
         super().__init__(agent_id="security")
+        self.use_llm = use_llm
+        
+        if use_llm:
+            self.llm_client = llm_client or get_llm_client()
+        else:
+            self.llm_client = None
+        
+        self.prompt_template = get_prompt_for_agent("security")
         self._setup_patterns()
+    
+    async def analyze(self, state: ReviewState) -> List[AgentFinding]:
+        """
+        Analyze PR for security vulnerabilities.
+        
+        Uses a combined approach:
+        1. Fast regex/pattern matching on all code
+        2. Optional LLM analysis for contextual understanding
+        
+        Args:
+            state: Current ReviewState
+            
+        Returns:
+            List of security findings
+        """
+        import time
+        start_time = time.perf_counter()
+        
+        findings: List[AgentFinding] = []
+        
+        # Parse diff to get changed code
+        diff_parser = DiffParser()
+        file_diffs = diff_parser.parse(state.pr_metadata.diff_content)
+        diff_text = self._format_diff_for_llm(file_diffs)
+        
+        # Always run pattern matching (fast and doesn't require API)
+        findings.extend(await self._analyze_with_patterns(state, diff_text))
+        
+        # Optionally run LLM analysis (slower, more sophisticated)
+        if self.use_llm and self.llm_client and not isinstance(self.llm_client, MockLLMClient):
+            llm_findings = await self._analyze_with_llm(state, diff_text)
+            # Merge LLM findings with pattern findings (avoid duplicates)
+            findings.extend(
+                f for f in llm_findings
+                if not self._is_duplicate_finding(f, findings)
+            )
+        
+        return findings
+    
+    def _is_duplicate_finding(
+        self,
+        finding: AgentFinding,
+        existing_findings: List[AgentFinding]
+    ) -> bool:
+        """Check if a finding is already in the list."""
+        for existing in existing_findings:
+            if (existing.file_path == finding.file_path and
+                existing.finding_type == finding.finding_type and
+                existing.description == finding.description):
+                return True
+        return False
+    
+    async def _analyze_with_llm(
+        self,
+        state: ReviewState,
+        diff_text: str
+    ) -> List[AgentFinding]:
+        """
+        Analyze using LLM for contextual understanding.
+        
+        Args:
+            state: ReviewState with PR metadata
+            diff_text: Formatted diff content
+            
+        Returns:
+            List of findings from LLM analysis
+        """
+        # Format the prompt with PR details
+        prompt = self.prompt_template.format(
+            pr_number=state.pr_metadata.pr_number,
+            pr_title=state.pr_metadata.title,
+            author=state.pr_metadata.author,
+            files_changed_count=len(state.pr_metadata.files_changed),
+            file_diffs=diff_text,
+        )
+        
+        try:
+            # Call LLM
+            response: LLMResponse = await self.llm_client.call(
+                system_prompt=prompt["system"],
+                user_prompt=prompt["user"],
+                temperature=0.2,  # Very low temperature for security (deterministic)
+                max_tokens=2000,
+            )
+            
+            # Parse response into findings
+            findings = self._parse_llm_findings(response, state)
+            return findings
+        
+        except Exception as e:
+            logger = self._get_logger()
+            logger.warning(f"LLM security analysis failed: {str(e)}")
+            return []  # Return empty list - pattern matching already ran
+    
+    async def _analyze_with_patterns(
+        self,
+        state: ReviewState,
+        diff_text: str
+    ) -> List[AgentFinding]:
+        """
+        Analyze using regex pattern matching.
+        
+        This runs first as it's fast and doesn't require API calls.
+        """
+        findings: List[AgentFinding] = []
+        
+        # Scan for secrets
+        findings.extend(
+            await self._scan_for_secrets(state, diff_text)
+        )
+        
+        # Scan for PII
+        findings.extend(
+            await self._scan_for_pii(state, diff_text)
+        )
+        
+        # Scan for OWASP vulnerabilities
+        findings.extend(
+            await self._scan_for_owasp(state, diff_text)
+        )
+        
+        return findings
+    
+    def _format_diff_for_llm(self, file_diffs: List) -> str:
+        """Format parsed diff for inclusion in LLM prompt."""
+        result = []
+        for file_diff in file_diffs[:10]:  # Limit to first 10 files
+            result.append(f"\n### {file_diff.file_path}")
+            
+            # Include first 500 chars of diff
+            content_preview = "\n".join(file_diff.lines[:20])
+            result.append(f"```\n{content_preview[:500]}...\n```")
+        
+        return "\n".join(result)
+    
+    def _parse_llm_findings(
+        self,
+        response: LLMResponse,
+        state: ReviewState
+    ) -> List[AgentFinding]:
+        """Parse JSON findings from LLM response."""
+        findings = []
+        
+        try:
+            data = response.parse_json()
+            
+            for finding_data in data.get("findings", []):
+                finding = AgentFinding(
+                    file_path=finding_data.get("file_path", "unknown"),
+                    line_number=finding_data.get("line_number"),
+                    finding_type=finding_data.get("finding_type", "Security Vulnerability"),
+                    description=finding_data.get("description", ""),
+                    suggestion=finding_data.get("suggestion", ""),
+                    severity=self._parse_severity(finding_data.get("severity")),
+                    agent_id=self.agent_id,
+                )
+                findings.append(finding)
+        
+        except Exception as e:
+            logger = self._get_logger()
+            logger.warning(f"Failed to parse security findings from LLM: {str(e)}")
+        
+        return findings
+    
+    def _get_logger(self):
+        """Get logger instance."""
+        from code_reviewer.utils.logger import get_logger
+        return get_logger()
+    
+    def _parse_severity(self, severity_str: str) -> Severity:
+        """Parse severity string to enum."""
+        if not severity_str:
+            return Severity.WARNING
+        
+        severity_str = severity_str.lower()
+        if severity_str == "critical":
+            return Severity.CRITICAL
+        elif severity_str == "warning":
+            return Severity.WARNING
+        else:
+            return Severity.INFO
     
     def _setup_patterns(self) -> None:
         """Initialize regex patterns for secret and PII detection."""
