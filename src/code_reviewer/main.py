@@ -290,8 +290,8 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     
     return JSONResponse({
         "status": "accepted",
-        "pr_number": pr_number,
-        "action": event_type,
+        "pr_number": payload.pr_number,
+        "action": payload.action,
     })
 
 
