@@ -1,7 +1,7 @@
 """
 FastAPI Entrypoint: Main service for the code reviewer system.
 
-Provides REST endpoints for:
+Provides REST endpoints:
 - Triggering PR reviews
 - Receiving GitHub webhook events
 - Status and health checks
@@ -14,6 +14,10 @@ from pydantic import BaseModel
 from typing import Optional
 import asyncio
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from code_reviewer.core.state import ReviewState, PRMetadata
 from code_reviewer.core.coordinator import ReviewCoordinator
@@ -103,6 +107,23 @@ async def review_pr(request: ReviewRequest, background_tasks: BackgroundTasks):
         
     Raises:
         HTTPException: If PR not found or review fails
+    """
+    return await _execute_review(request, background_tasks)
+
+
+async def _execute_review(request: ReviewRequest, background_tasks: BackgroundTasks) -> ReviewResponse:
+    """
+    Execute the actual PR review logic.
+    
+    This is extracted into a separate function so it can be called from both
+    the REST endpoint and the background task triggered by webhooks.
+    
+    Args:
+        request: ReviewRequest with PR details
+        background_tasks: FastAPI background tasks for posting comments
+        
+    Returns:
+        ReviewResponse with findings summary
     """
     try:
         logger.log_pr_review_start(request.pr_number, "unknown")
@@ -290,8 +311,8 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     
     return JSONResponse({
         "status": "accepted",
-        "pr_number": pr_number,
-        "action": event_type,
+        "pr_number": payload.pr_number,
+        "action": payload.action,
     })
 
 
@@ -356,13 +377,74 @@ async def _run_review_background(request: ReviewRequest) -> None:
     """
     Run review in background (triggered by webhook).
     
+    This executes the review logic asynchronously without blocking the webhook response.
+    
     Args:
-        request: Review request
+        request: Review request with PR details
     """
     try:
-        # Create a temporary endpoint call to run review
-        # In production, would share the coordinator instance
-        await review_pr(request, BackgroundTasks())
+        # Initialize GitHub client for comment posting
+        github_config = GitHubConfig(
+            token=request.github_token,
+            owner=request.owner,
+            repo=request.repo,
+        )
+        github_client = GitHubClient(github_config)
+        
+        # Fetch PR metadata
+        pr_info = await github_client.get_pr_info(request.pr_number)
+        pr_diff = await github_client.get_pr_diff(request.pr_number)
+        
+        # Debug: log the diff content
+        logger.debug(f"PR #{request.pr_number} diff received: {len(pr_diff)} characters")
+        if pr_diff:
+            logger.debug(f"First 500 chars of PR diff:\n{pr_diff[:500]}")
+        else:
+            logger.warning(f"PR #{request.pr_number} diff is EMPTY!")
+        
+        # Extract data for ReviewState
+        pr_metadata = PRMetadata(
+            pr_number=request.pr_number,
+            title=pr_info["title"],
+            author=pr_info["user"]["login"],
+            branch=pr_info["head"]["ref"],
+            base_branch=pr_info["base"]["ref"],
+            diff_content=pr_diff,
+            files_changed=[f["filename"] for f in pr_info.get("files", [])],
+            additions=pr_info.get("additions", 0),
+            deletions=pr_info.get("deletions", 0),
+        )
+        
+        # Load previous findings from cache for deduplication
+        cache_key = f"pr:{request.pr_number}:findings"
+        previous_finding_ids = cache_backend.get(cache_key)
+        
+        # Create initial state
+        initial_state = ReviewState(pr_metadata=pr_metadata)
+        
+        # Run review with deduplication support
+        review_state = await coordinator.review_pr(
+            initial_state,
+            previous_finding_ids=previous_finding_ids
+        )
+        
+        # Cache the new findings for next review
+        new_finding_ids = review_state.get_finding_ids()
+        if new_finding_ids:
+            cache_backend.set(cache_key, new_finding_ids, ex=86400*30)  # 30 days
+        
+        # Post comment to GitHub synchronously (not in background task)
+        if review_state.final_summary:
+            await _post_review_comment(
+                github_client,
+                request.pr_number,
+                review_state.final_summary,
+            )
+        
+        logger.info(
+            f"Completed PR review #%d with webhook processing",
+            request.pr_number
+        )
     except Exception as e:
         logger.error(f"Background review failed: {str(e)}", pr_number=request.pr_number)
 
